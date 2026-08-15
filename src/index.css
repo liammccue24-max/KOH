@@ -1,6 +1,128 @@
+@font-face {
+  font-family: 'Tektur';
+  src: url('/fonts/Tektur-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Tektur';
+  src: url('/fonts/Tektur-Medium.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Work Sans';
+  src: url('/fonts/WorkSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Work Sans';
+  src: url('/fonts/WorkSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+/*
+  Palette is grounded in the actual fab process: cleanrooms are lit with
+  yellow/amber safelight because photoresist is UV-sensitive, which is why
+  the mask/protect color reads gold; native silicon has a cool blue-grey
+  cast under that light; an etched cavity reads as a deep blue-black shadow.
+  Light theme swaps the safelight room for daylight cleanroom whites while
+  keeping the same three material colors, since those are physical facts,
+  not a stylistic choice.
+*/
 :root {
+  --ground: #eef1f4;
+  --surface: #ffffff;
+  --surface-2: #e3e8ed;
+  --surface-inset: #d9dfe6;
+  --border: #c7d0d9;
+  --border-strong: #aeb9c4;
+  --text-primary: #161b22;
+  --text-secondary: #48525e;
+  --text-tertiary: #78838f;
+
+  --accent: #a9781f;
+  --accent-strong: #8a611a;
+  --accent-contrast: #fffaf0;
+  --accent-wash: rgba(169, 120, 31, 0.12);
+
+  --silicon: #5f7183;
+  --etch-deep: #22303f;
+  --focus-ring: #2f6fed;
+  --danger: #b3261e;
+  --danger-wash: rgba(179, 38, 30, 0.08);
+
+  --font-display: 'Tektur', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Work Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ground: #0a0c11;
+    --surface: #12151c;
+    --surface-2: #171b23;
+    --surface-inset: #0d1016;
+    --border: #262c37;
+    --border-strong: #37404d;
+    --text-primary: #e9ecf1;
+    --text-secondary: #a7b0bc;
+    --text-tertiary: #717c88;
+
+    --accent: #d9ad40;
+    --accent-strong: #f0c563;
+    --accent-contrast: #1c1404;
+    --accent-wash: rgba(217, 173, 64, 0.12);
+
+    --silicon: #9ea8b3;
+    --etch-deep: #1a2431;
+    --focus-ring: #5fa8ff;
+    --danger: #ff9d9d;
+    --danger-wash: rgba(255, 100, 100, 0.1);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --ground: #0a0c11;
+  --surface: #12151c;
+  --surface-2: #171b23;
+  --surface-inset: #0d1016;
+  --border: #262c37;
+  --border-strong: #37404d;
+  --text-primary: #e9ecf1;
+  --text-secondary: #a7b0bc;
+  --text-tertiary: #717c88;
+
+  --accent: #d9ad40;
+  --accent-strong: #f0c563;
+  --accent-contrast: #1c1404;
+  --accent-wash: rgba(217, 173, 64, 0.12);
+
+  --silicon: #9ea8b3;
+  --etch-deep: #1a2431;
+  --focus-ring: #5fa8ff;
+  --danger: #ff9d9d;
+  --danger-wash: rgba(255, 100, 100, 0.1);
+
   color-scheme: dark;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 * {
@@ -15,16 +137,38 @@ body,
 }
 
 body {
-  background: #0b0d12;
-  color: #e8ebf0;
+  background: var(--ground);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
 }
 
 button {
   font-family: inherit;
 }
 
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 input[type='range'] {
-  accent-color: #4fa3ff;
+  accent-color: var(--accent);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
 }
 
 .app-shell {
@@ -33,22 +177,36 @@ input[type='range'] {
   height: 100%;
 }
 
+/* ---------- Header ---------- */
+
 .app-header {
-  padding: 14px 20px;
-  border-bottom: 1px solid #1c212b;
-  background: #10131a;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
-.app-header h1 {
-  margin: 0 0 4px;
-  font-size: 1.15rem;
+.wafer-mark {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
-.app-header p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #9aa4b2;
+.app-header-text h1 {
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
 }
+
+.app-header-text p {
+  margin: 3px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ---------- Layout ---------- */
 
 .app-body {
   display: flex;
@@ -59,49 +217,88 @@ input[type='range'] {
 .sidebar {
   width: 320px;
   flex-shrink: 0;
-  border-right: 1px solid #1c212b;
-  padding: 16px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: 18px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 0 0 10px;
+}
+
+/* ---------- Upload ---------- */
+
 .upload-drop {
-  border: 1.5px dashed #33404f;
-  border-radius: 10px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 8px;
   padding: 18px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  background: var(--surface-2);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .upload-drop:hover,
 .upload-drop.drag-over {
-  border-color: #4fa3ff;
-  background: rgba(79, 163, 255, 0.06);
+  border-color: var(--accent);
+  background: var(--accent-wash);
 }
 
 .upload-title {
   font-weight: 600;
   font-size: 0.9rem;
   word-break: break-all;
+  color: var(--text-primary);
 }
 
 .upload-hint {
   font-size: 0.75rem;
-  color: #7c8896;
+  color: var(--text-tertiary);
   margin-top: 4px;
 }
 
+.sample-link {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sample-link:hover {
+  color: var(--accent);
+}
+
 .error-banner {
-  background: rgba(220, 80, 80, 0.15);
-  border: 1px solid rgba(220, 80, 80, 0.4);
-  color: #ff9d9d;
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 0.82rem;
+  font-family: var(--font-mono);
 }
+
+/* ---------- Controls ---------- */
 
 .controls {
   display: flex;
@@ -120,13 +317,16 @@ input[type='range'] {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  color: #d3d9e0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .control-hint {
-  color: #7c8896;
+  color: var(--text-tertiary);
   font-size: 0.72rem;
   text-align: right;
+  font-family: var(--font-body);
 }
 
 .control-row select,
@@ -135,12 +335,13 @@ input[type='range'] {
 }
 
 .control-row select {
-  background: #171c25;
-  color: #e8ebf0;
-  border: 1px solid #2a323e;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 7px 8px;
   font-size: 0.82rem;
+  font-family: var(--font-body);
 }
 
 .legend {
@@ -148,16 +349,18 @@ input[type='range'] {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font-size: 0.75rem;
-  color: #9aa4b2;
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
 }
 
 .legend-swatch {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
   margin-left: 8px;
+  border: 1px solid var(--border-strong);
 }
 
 .legend-swatch:first-child {
@@ -165,9 +368,17 @@ input[type='range'] {
 }
 
 .stat-line {
-  font-size: 0.8rem;
-  color: #cfd6de;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
 }
+
+/* ---------- Main view ---------- */
 
 .main-view {
   flex: 1;
@@ -175,15 +386,16 @@ input[type='range'] {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--ground);
 }
 
 .placeholder {
-  max-width: 520px;
-  margin: 60px auto;
+  max-width: 540px;
+  margin: 64px auto;
   padding: 0 20px;
-  color: #9aa4b2;
-  font-size: 0.92rem;
-  line-height: 1.5;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .view-3d {
@@ -196,13 +408,17 @@ input[type='range'] {
   width: 100%;
   height: 100%;
   display: block;
-  background: radial-gradient(circle at 50% 30%, #161a22, #0b0d12);
+  /* The 3D stage stays a fixed dark instrument bay regardless of UI theme,
+     the way a scope or CAD viewport does -- it's showing a physical wafer
+     under fixed lighting, not app chrome. */
+  background: radial-gradient(circle at 50% 30%, #161c26, #05070a);
 }
 
 .view-cross-section {
   flex: 1;
-  min-height: 180px;
-  border-top: 1px solid #1c212b;
+  min-height: 190px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
   display: flex;
   flex-direction: column;
 }
@@ -210,11 +426,12 @@ input[type='range'] {
 .cross-section-controls {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 16px;
+  gap: 16px;
+  padding: 10px 18px;
   font-size: 0.78rem;
-  color: #9aa4b2;
+  color: var(--text-secondary);
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .cross-section-controls label {
@@ -222,6 +439,7 @@ input[type='range'] {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .cross-section-controls input[type='range'] {

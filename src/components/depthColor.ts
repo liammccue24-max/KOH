@@ -1,7 +1,9 @@
-const SILICON_TOP: [number, number, number] = [0.62, 0.66, 0.7]
-const MASK_COLOR: [number, number, number] = [0.85, 0.68, 0.25]
+// Mirrors the --silicon / --accent(dark) / --etch-deep(dark) CSS tokens in
+// index.css, so the legend swatches match the rendered wafer exactly.
+const SILICON_TOP: [number, number, number] = [0.62, 0.659, 0.702] // #9ea8b3
+const MASK_COLOR: [number, number, number] = [0.851, 0.678, 0.251] // #d9ad40
 const ETCH_SHALLOW: [number, number, number] = [0.75, 0.8, 0.85]
-const ETCH_DEEP: [number, number, number] = [0.12, 0.16, 0.24]
+const ETCH_DEEP: [number, number, number] = [0.102, 0.141, 0.192] // #1a2431
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t

@@ -3,6 +3,7 @@ import { FileUpload } from './components/FileUpload.tsx'
 import { ControlsPanel } from './components/ControlsPanel.tsx'
 import { WaferScene } from './components/WaferScene.tsx'
 import { CrossSectionView } from './components/CrossSectionView.tsx'
+import { WaferMark } from './components/WaferMark.tsx'
 import { parseGds } from './gds/parser.ts'
 import { collectLayers, flattenLayer } from './gds/flatten.ts'
 import type { GdsLibrary } from './gds/types.ts'
@@ -78,55 +79,83 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>KOH Anisotropic Etch Simulator</h1>
-        <p>Upload a GDSII mask design and preview how it etches into a (100) silicon wafer in KOH.</p>
+        <div className="wafer-mark">
+          <WaferMark />
+        </div>
+        <div className="app-header-text">
+          <h1>KOH Etch Simulator</h1>
+          <p>GDSII mask &rarr; anisotropic KOH etch preview, (100) Si, edges on &lt;110&gt;</p>
+        </div>
       </header>
 
       <div className="app-body">
         <aside className="sidebar">
-          <FileUpload onFile={handleFile} fileName={fileName} />
+          <div>
+            <p className="section-label">Mask design</p>
+            <FileUpload onFile={handleFile} fileName={fileName} />
+            {!library && (
+              <button
+                type="button"
+                className="sample-link"
+                onClick={() => {
+                  fetch('/sample-koh-mask.gds')
+                    .then((r) => r.arrayBuffer())
+                    .then((buf) => handleFile(buf, 'sample-koh-mask.gds'))
+                    .catch(() => setError('Could not load the sample design.'))
+                }}
+              >
+                No file handy? Load the sample design
+              </button>
+            )}
+          </div>
           {error && <div className="error-banner">{error}</div>}
 
           {library && topName && selectedLayer && (
-            <ControlsPanel
-              structures={structures}
-              topName={topName}
-              onTopNameChange={(name) => {
-                setTopName(name)
-                const newLayers = collectLayers(library, name)
-                setSelectedLayer(newLayers[0] ?? null)
-              }}
-              layers={layers}
-              selectedLayer={selectedLayer}
-              onLayerChange={setSelectedLayer}
-              params={params}
-              onParamsChange={setParams}
-              maxTimeMin={240}
-            />
+            <div>
+              <p className="section-label">Process parameters</p>
+              <ControlsPanel
+                structures={structures}
+                topName={topName}
+                onTopNameChange={(name) => {
+                  setTopName(name)
+                  const newLayers = collectLayers(library, name)
+                  setSelectedLayer(newLayers[0] ?? null)
+                }}
+                layers={layers}
+                selectedLayer={selectedLayer}
+                onLayerChange={setSelectedLayer}
+                params={params}
+                onParamsChange={setParams}
+                maxTimeMin={240}
+              />
+            </div>
           )}
 
           {result && (
-            <div className="controls">
-              <label className="control-row">
-                <div className="control-label">
-                  <span>3D vertical exaggeration: {verticalExaggeration.toFixed(1)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={0.5}
-                  value={verticalExaggeration}
-                  onChange={(e) => setVerticalExaggeration(Number(e.target.value))}
-                />
-              </label>
+            <div>
+              <p className="section-label">Result</p>
+              <div className="controls">
+                <label className="control-row">
+                  <div className="control-label">
+                    <span>3D vertical exaggeration: {verticalExaggeration.toFixed(1)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={0.5}
+                    value={verticalExaggeration}
+                    onChange={(e) => setVerticalExaggeration(Number(e.target.value))}
+                  />
+                </label>
 
-              <div className="legend">
-                <span className="legend-swatch" style={{ background: 'rgb(217,173,64)' }} /> mask (protected)
-                <span className="legend-swatch" style={{ background: 'rgb(158,168,179)' }} /> original surface
-                <span className="legend-swatch" style={{ background: 'rgb(31,41,61)' }} /> etched (deep)
+                <div className="legend">
+                  <span className="legend-swatch" style={{ background: '#d9ad40' }} /> mask (protected)
+                  <span className="legend-swatch" style={{ background: '#9ea8b3' }} /> original surface
+                  <span className="legend-swatch" style={{ background: '#1a2431' }} /> etched (deep)
+                </div>
+                <div className="stat-line">Max etched depth: {result.maxActualDepthUm.toFixed(3)} µm</div>
               </div>
-              <div className="stat-line">Max etched depth: {result.maxActualDepthUm.toFixed(3)} µm</div>
             </div>
           )}
         </aside>
