@@ -1,9 +1,10 @@
 // Packs the Vite production build (dist/) into a single self-contained HTML
-// file for publishing as a Claude Artifact: fonts and the sample GDS file
-// are inlined as base64 data URIs, CSS and JS are inlined directly, and the
-// "/sample-koh-mask.gds" fetch path used by the real app's sample button is
-// rewritten to a data: URI (fetch() can read those directly) since there is
-// no server to serve it from inside the artifact sandbox.
+// file for publishing as a Claude Artifact: fonts are inlined into the CSS
+// as base64 data URIs, CSS and JS are inlined directly, and the sample GDS
+// file is embedded as a base64 global (window.__EMBEDDED_SAMPLE_GDS_BASE64__)
+// that App.tsx reads directly via atob() instead of fetch() -- artifact
+// hosting sandboxes can apply a CSP that blocks fetch() entirely, even for
+// same-document data: URIs, so avoid the network stack altogether here.
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -27,18 +28,13 @@ for (const fontFile of readdirSync(fontDir)) {
 }
 
 const gdsB64 = readFileSync(resolve(root, 'public/sample-koh-mask.gds')).toString('base64')
-const gdsDataUri = `data:application/octet-stream;base64,${gdsB64}`
-const before = js.length
-js = js.split('`/sample-koh-mask.gds`').join(`\`${gdsDataUri}\``)
-if (js.length === before) {
-  console.warn('Warning: sample GDS fetch path literal not found in bundle -- sample button may not work in the packaged artifact.')
-}
 
 const html = `<title>KOH Etch Simulator</title>
 <style>
 ${css}
 </style>
 <div id="root"></div>
+<script>window.__EMBEDDED_SAMPLE_GDS_BASE64__ = ${JSON.stringify(gdsB64)};</script>
 <script type="module">
 ${js}
 </script>

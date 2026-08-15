@@ -8,8 +8,19 @@ import { parseGds } from './gds/parser.ts'
 import { collectLayers, flattenLayer } from './gds/flatten.ts'
 import type { GdsLibrary } from './gds/types.ts'
 import { toMicrons } from './lib/units.ts'
+import { base64ToArrayBuffer } from './lib/base64.ts'
 import { simulateEtch } from './sim/etchSim.ts'
 import type { EtchParams } from './sim/types.ts'
+
+declare global {
+  interface Window {
+    // Set by scripts/pack-artifact.mjs when bundling into a single
+    // self-contained HTML file, so the sample design can be loaded without
+    // any network request (some artifact hosting sandboxes apply a strict
+    // CSP that blocks fetch() even for data: URIs).
+    __EMBEDDED_SAMPLE_GDS_BASE64__?: string
+  }
+}
 
 const DEFAULT_PARAMS: EtchParams = {
   rate100UmPerMin: 1.0,
@@ -48,6 +59,18 @@ function App() {
       setError(e instanceof Error ? e.message : 'Failed to parse GDS file.')
       setLibrary(null)
     }
+  }
+
+  const loadSampleDesign = () => {
+    const embedded = window.__EMBEDDED_SAMPLE_GDS_BASE64__
+    if (embedded) {
+      handleFile(base64ToArrayBuffer(embedded), 'sample-koh-mask.gds')
+      return
+    }
+    fetch('/sample-koh-mask.gds')
+      .then((r) => r.arrayBuffer())
+      .then((buf) => handleFile(buf, 'sample-koh-mask.gds'))
+      .catch(() => setError('Could not load the sample design.'))
   }
 
   const layers = useMemo(() => (library && topName ? collectLayers(library, topName) : []), [library, topName])
@@ -94,16 +117,7 @@ function App() {
             <p className="section-label">Mask design</p>
             <FileUpload onFile={handleFile} fileName={fileName} />
             {!library && (
-              <button
-                type="button"
-                className="sample-link"
-                onClick={() => {
-                  fetch('/sample-koh-mask.gds')
-                    .then((r) => r.arrayBuffer())
-                    .then((buf) => handleFile(buf, 'sample-koh-mask.gds'))
-                    .catch(() => setError('Could not load the sample design.'))
-                }}
-              >
+              <button type="button" className="sample-link" onClick={loadSampleDesign}>
                 No file handy? Load the sample design
               </button>
             )}
