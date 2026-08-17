@@ -42,7 +42,7 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): 
   const spanX = Math.max(bbox.maxX - bbox.minX, 1e-6)
   const spanY = Math.max(bbox.maxY - bbox.minY, 1e-6)
   const longerSpan = Math.max(spanX, spanY)
-  const margin = longerSpan * params.marginFraction
+  const margin = params.marginEnabled ? longerSpan * params.marginFraction : 0
 
   const paddedMinX = bbox.minX - margin
   const paddedMinY = bbox.minY - margin

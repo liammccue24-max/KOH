@@ -15,6 +15,8 @@ export interface EtchParams {
   resolution: number
   /** Extra protected (unetched) margin around the drawn geometry, as a fraction of the bbox's longer side. */
   marginFraction: number
+  /** Whether to add marginFraction's padding at all. Off = domain is the mask's own bounding box, so a mask already designed with its own spacing/compensation isn't given extra protected silicon on top of what was drawn. */
+  marginEnabled: boolean
 }
 
 export const SQRT2 = Math.SQRT2

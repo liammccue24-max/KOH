@@ -334,6 +334,24 @@ input[type='radio'] {
   width: 100%;
 }
 
+.control-margin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-margin-row input[type='checkbox'] {
+  flex: 0 0 auto;
+}
+
+.control-margin-row input[type='range'] {
+  flex: 1 1 auto;
+}
+
+.control-margin-row input[type='range']:disabled {
+  opacity: 0.4;
+}
+
 .control-row select {
   background: var(--surface-2);
   color: var(--text-primary);

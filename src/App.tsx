@@ -41,6 +41,7 @@ const DEFAULT_PARAMS: EtchParams = {
   polarity: 'layerIsOpening',
   resolution: 256,
   marginFraction: 0.15,
+  marginEnabled: true,
 }
 
 function App() {

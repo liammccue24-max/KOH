@@ -9,6 +9,7 @@ const baseParams: EtchParams = {
   polarity: 'layerIsOpening',
   resolution: 200,
   marginFraction: 0.3,
+  marginEnabled: true,
 }
 
 function squareOpening(size: number): Polygon[] {
@@ -79,6 +80,15 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     const result = simulateEtch(squareOpening(L), { ...baseParams, marginFraction: 0.5, undercutRateUmPerMin: 0 })
     const outsideDepth = sampleDepth(result, -5, -5)
     expect(outsideDepth).toBe(0)
+  })
+
+  it('marginEnabled: false sizes the domain to the mask bbox exactly, ignoring marginFraction', () => {
+    const L = 20
+    const result = simulateEtch(squareOpening(L), { ...baseParams, marginFraction: 0.5, marginEnabled: false })
+    expect(result.originXUm).toBeCloseTo(0, 6)
+    expect(result.originYUm).toBeCloseTo(0, 6)
+    expect(result.width * result.cellSizeUm).toBeCloseTo(L, 6)
+    expect(result.height * result.cellSizeUm).toBeCloseTo(L, 6)
   })
 })
 

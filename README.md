@@ -140,6 +140,15 @@ instead, so unrelated parameter changes skip the rebuild entirely. See
 6. Adjust the (100) etch rate, undercut rate, and etch time. Etch time and
    rate are independent; only their product (max possible depth) matters
    for self-limiting geometry, but the undercut rate is set separately.
+7. **Domain margin** is optional, via its checkbox. It pads extra protected
+   silicon around the mask geometry before simulating — useful if the file
+   you loaded draws only the etch opening itself, with no surrounding
+   context. If your mask was already designed with its own spacing (e.g.
+   corner-compensation tabs, or a protective layer whose edges are meant to
+   set where the self-limiting slope stops), leave it unchecked: the
+   padding would otherwise sit on top of what you drew, protecting silicon
+   the design never asked to protect. With it off, the simulation domain is
+   exactly the mask's own bounding box.
 
 To regenerate the bundled sample file: `node scripts/generate-sample-gds.mjs`.
 It draws four layers: a square opening (pyramid), an elongated opening

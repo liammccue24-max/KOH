@@ -161,15 +161,27 @@ export function ControlsPanel({
         />
       </Row>
 
-      <Row label={`Domain margin: ${(params.marginFraction * 100).toFixed(0)}%`} hint="Protected silicon padding around the mask geometry">
-        <input
-          type="range"
-          min={0}
-          max={0.5}
-          step={0.01}
-          value={params.marginFraction}
-          onChange={(e) => set('marginFraction', Number(e.target.value))}
-        />
+      <Row
+        label={`Domain margin: ${params.marginEnabled ? `${(params.marginFraction * 100).toFixed(0)}%` : 'off'}`}
+        hint="Extra protected silicon padding added around the mask. Only needed if the mask itself wasn't drawn with its own spacing/compensation — otherwise this pads on top of what you designed."
+      >
+        <div className="control-margin-row">
+          <input
+            type="checkbox"
+            checked={params.marginEnabled}
+            onChange={(e) => set('marginEnabled', e.target.checked)}
+            aria-label="Enable domain margin"
+          />
+          <input
+            type="range"
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={params.marginFraction}
+            disabled={!params.marginEnabled}
+            onChange={(e) => set('marginFraction', Number(e.target.value))}
+          />
+        </div>
       </Row>
     </div>
   )
