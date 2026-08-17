@@ -250,9 +250,19 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
     [results, verticalExaggeration, centerXUm, centerZUm],
   )
   const patchBoxes = useMemo(() => results.map(patchBoundingBox), [results])
+  // A patch's bounding box only depends on its mask geometry/margin/
+  // resolution, never on etch time/rate/undercut -- but `results` gets a
+  // new array of new objects on every debounced parameter change
+  // regardless of which fields actually changed. Keying off that array
+  // reference directly rebuilt the whole context mesh (a 260x260 grid,
+  // hole-cut against every patch) on every slider tweak, not just ones
+  // that could have moved a box. This key is stable across changes that
+  // don't affect box values, so those tweaks skip the rebuild entirely.
+  const patchBoxesKey = patchBoxes.map((b) => `${b.minX},${b.minY},${b.maxX},${b.maxY}`).join('|')
   const contextGeometry = useMemo(
     () => (boundaryPolygonsUm ? buildContextGeometry(boundaryPolygonsUm, patchBoxes, centerXUm, centerZUm) : null),
-    [boundaryPolygonsUm, patchBoxes, centerXUm, centerZUm],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patchBoxesKey stands in for patchBoxes' values on purpose
+    [boundaryPolygonsUm, patchBoxesKey, centerXUm, centerZUm],
   )
 
   // These BufferGeometry objects are built by hand (not declared as JSX

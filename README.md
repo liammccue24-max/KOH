@@ -99,6 +99,23 @@ deepening etch can't silently push the geometry outside the view frustum.
 It only re-triggers on significant growth, not every render, so ordinary
 small parameter tweaks don't fight the user's manual orbit/zoom.
 
+**The context mesh only rebuilds when a patch's bounding box actually
+changes.** Its own `useMemo` depends on `patchBoxes`, computed from the
+etch results — but etch time/rate/undercut all produce a new `results`
+array (new objects) on every debounced parameter change, even though only
+mask geometry, margin, and resolution can move a patch's bounding box.
+Keying the memo directly off `patchBoxes`'s array reference meant the full
+context mesh (a 260x260 grid, hole-cut against every patch) was rebuilt on
+every etch-time/rate/undercut tweak, not just the ones that could plausibly
+have moved a box — a real, measured cause of UI lag once a wafer/die
+outline is loaded (confirmed via instrumentation: 8 genuine etch-time
+changes triggered 0 context rebuilds after the fix, versus one rebuild per
+change before it, while a genuine margin change — which does move the
+box — still correctly triggers a rebuild). The fix serializes the boxes'
+actual numeric values into a string and uses that as the dependency
+instead, so unrelated parameter changes skip the rebuild entirely. See
+`patchBoxesKey` in `WaferScene.tsx`.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).
