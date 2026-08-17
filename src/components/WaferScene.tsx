@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { computeBoundingBox, type BoundingBox, type EtchResult, type Polygon } from '../sim/types.ts'
 import { rasterizePolygons, type GridSpec } from '../sim/raster.ts'
@@ -13,6 +14,7 @@ interface Props {
 }
 
 const CONTEXT_RESOLUTION = 260
+const CAMERA_FOV_DEG = 40
 
 function patchBoundingBox(result: EtchResult): BoundingBox {
   return {
@@ -192,7 +194,9 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, 
 
 function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Props) {
   const { camera } = useThree()
-  const didInitCamera = useRef(false)
+  // The maxSpan the camera was last positioned/aimed for (0 = never).
+  const framedSpanRef = useRef(0)
+  const controlsRef = useRef<OrbitControlsImpl>(null)
 
   const combinedPatchBox = useMemo(() => results.map(patchBoundingBox).reduce((acc, b) => (acc ? unionBox(acc, b) : b), null as BoundingBox | null), [results])
   const boundaryBox = boundaryPolygonsUm ? computeBoundingBox(boundaryPolygonsUm) : null
@@ -202,7 +206,23 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
 
   const combinedPatchSpan = combinedPatchBox ? Math.max(combinedPatchBox.maxX - combinedPatchBox.minX, combinedPatchBox.maxY - combinedPatchBox.minY) : 0
   const boundarySpan = boundaryBox ? Math.max(boundaryBox.maxX - boundaryBox.minX, boundaryBox.maxY - boundaryBox.minY) : 0
-  const maxSpan = Math.max(combinedPatchSpan, boundarySpan, 1e-6)
+
+  // A patch's *lateral* span alone isn't a safe bound on the scene's actual
+  // size: self-limiting geometry normally keeps depth well under the
+  // lateral span, but a fully-undercut/no-longer-self-limiting patch (every
+  // cell open, nothing left to measure distance against) is capped only by
+  // rate*time, which can grow far past the lateral domain -- e.g. a 40um
+  // mesa fully consumed by undercut, still etching a flat 240um-deep floor.
+  // Fold in the worst-case depth so a deep patch never ends up taller than
+  // the camera's far plane and silently disappears.
+  const maxPossibleDepth = results.reduce((max, r) => Math.max(max, r.maxPossibleDepthUm), 0)
+  const verticalExtent = maxPossibleDepth * verticalExaggeration
+  const maxSpan = Math.max(combinedPatchSpan, boundarySpan, verticalExtent, 1e-6)
+  // The scene's geometry only extends downward from y=0 (the original
+  // surface); looking at y=0 itself wastes half the frame on empty space
+  // above the wafer once a deep etch's vertical extent starts to dominate,
+  // so aim at the vertical midpoint of the worst-case depth instead.
+  const targetY = -verticalExtent / 2
 
   // How close the camera can zoom is bounded by the smallest patch (so any
   // feature, however fine, can be inspected closely), not the whole scene.
@@ -236,20 +256,63 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
     }
   }, [contextGeometry])
 
-  if (!didInitCamera.current) {
-    camera.position.set(maxSpan * 0.6, maxSpan * 0.55, maxSpan * 0.75)
-    camera.lookAt(0, 0, 0)
-    // Fixed near/far planes lose almost all depth-buffer precision once the
-    // scene scale is very different from them (e.g. a 150mm wafer against a
-    // fine etch patch), which shows up as flickery z-fighting noise on
-    // near-coincident surfaces like a patch/context seam. Bound near/far to
-    // the actual zoom range instead.
-    if (camera instanceof THREE.PerspectiveCamera) {
-      camera.near = minDistance * 0.2
-      camera.far = maxDistance * 3
+  // Re-frame (reposition + re-aim) whenever the scene has grown well past
+  // what the camera was last set up for -- not on every render, so normal
+  // small parameter tweaks don't fight the user's manual orbit/zoom, but
+  // reliably enough that an interactively-deepening etch (see maxSpan
+  // above) can't grow the geometry out past a camera that's still framed
+  // for the shallow scene it started as. This runs in an effect (after
+  // commit), not inline during render: OrbitControls.update() clamps the
+  // new camera distance against its own minDistance/maxDistance, and those
+  // are only current on the underlying object once react-three-fiber has
+  // applied this render's (possibly just-grown) prop values to it -- doing
+  // this inline mid-render was clamping against the *previous* render's
+  // still-small maxDistance, silently undoing the reframe.
+  useEffect(() => {
+    if (maxSpan <= framedSpanRef.current * 1.2) return
+    // Distance derived from the actual vertical FOV (matching the Canvas's
+    // camera={{ fov: 40 }}) rather than an arbitrary multiplier, so the
+    // full maxSpan reliably fits in view regardless of scale -- an ad-hoc
+    // constant here previously under-framed depth-dominated scenes (a
+    // shallow-but-wide etch and a narrow-but-deep one need very different
+    // distances to show their full extent, which a single fixed multiplier
+    // can't give both). The 1.35 factor is slack for the diagonal viewing
+    // angle and portrait/narrow viewports, where the binding constraint is
+    // horizontal rather than vertical FOV.
+    const halfFovRad = ((CAMERA_FOV_DEG / 2) * Math.PI) / 180
+    const cameraDistance = (maxSpan / 2 / Math.tan(halfFovRad)) * 1.35
+    const dir = new THREE.Vector3(0.6, 0.55, 0.75).normalize()
+    camera.position.set(dir.x * cameraDistance, targetY + dir.y * cameraDistance, dir.z * cameraDistance)
+    camera.lookAt(0, targetY, 0)
+    // OrbitControls tracks its own target/spherical state independently of
+    // the camera object; setting camera.position directly is not enough --
+    // on its next internal update() it recomputes the camera position from
+    // that tracked state and silently overwrites what was just set here.
+    // Reset its target and force a sync so the reframe actually sticks.
+    if (controlsRef.current) {
+      controlsRef.current.target.set(0, targetY, 0)
+      controlsRef.current.update()
+    }
+    framedSpanRef.current = maxSpan
+  }, [camera, maxSpan, targetY])
+
+  // Fixed near/far planes lose almost all depth-buffer precision once the
+  // scene scale is very different from them (e.g. a 150mm wafer against a
+  // fine etch patch), which shows up as flickery z-fighting noise on
+  // near-coincident surfaces like a patch/context seam -- so these are
+  // bounded to the actual zoom range instead of a fixed default. That range
+  // (via maxSpan, above) has to be recomputed on every render, not just
+  // once at mount: an interactively-deepening etch can grow the scene's
+  // vertical extent well past what the camera was originally framed for,
+  // and a stale far plane then clips the geometry into invisibility.
+  if (camera instanceof THREE.PerspectiveCamera) {
+    const desiredNear = minDistance * 0.2
+    const desiredFar = maxDistance * 3
+    if (camera.near !== desiredNear || camera.far !== desiredFar) {
+      camera.near = desiredNear
+      camera.far = desiredFar
       camera.updateProjectionMatrix()
     }
-    didInitCamera.current = true
   }
 
   return (
@@ -267,14 +330,14 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
           <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.85} metalness={0.05} />
         </mesh>
       ))}
-      <OrbitControls makeDefault enableDamping dampingFactor={0.08} minDistance={minDistance} maxDistance={maxDistance} />
+      <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={minDistance} maxDistance={maxDistance} />
     </>
   )
 }
 
 export function WaferScene({ results, boundaryPolygonsUm, verticalExaggeration }: Props) {
   return (
-    <Canvas className="wafer-canvas" camera={{ fov: 40, near: 0.01, far: 1e6 }}>
+    <Canvas className="wafer-canvas" camera={{ fov: CAMERA_FOV_DEG, near: 0.01, far: 1e6 }}>
       <SceneContent results={results} boundaryPolygonsUm={boundaryPolygonsUm} verticalExaggeration={verticalExaggeration} />
     </Canvas>
   )

@@ -74,6 +74,24 @@ children) also aren't disposed automatically by react-three-fiber, so
 whenever a new one replaces them — otherwise every parameter change leaks
 their GPU-side buffers.
 
+**The camera re-frames when the scene's depth grows past what it was set
+up for.** A patch's lateral span isn't a safe bound on how tall the scene
+actually gets: self-limiting geometry normally keeps depth well under the
+lateral span, but a fully-undercut patch (nothing left protected, so
+there's no longer any protected-mask distance to measure against) is
+capped only by `rate × time`, which can grow far past the lateral domain —
+e.g. a small mesa fully consumed by undercut, still etching a flat,
+arbitrarily deep floor as etch time increases. `SceneContent` folds the
+worst-case depth (`maxPossibleDepthUm`) into the framing span and re-runs
+camera positioning (in a `useEffect`, so `OrbitControls`' own
+`minDistance`/`maxDistance` props are current by the time its `update()`
+call clamps against them — doing this inline mid-render clamped against
+the *previous* render's still-small values) whenever the required span
+grows past what the camera was last framed for, so an interactively
+deepening etch can't silently push the geometry outside the view frustum.
+It only re-triggers on significant growth, not every render, so ordinary
+small parameter tweaks don't fight the user's manual orbit/zoom.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).
