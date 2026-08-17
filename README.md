@@ -21,17 +21,15 @@ npm test         # vitest unit tests
 
 ## Deployment
 
-`.github/workflows/deploy-koh-etch-pages.yml` (at the repo root) builds and
-publishes this app to GitHub Pages on every push to
-`claude/gds-koh-etching-sim-n4d46d` that touches `koh-etch-simulator/` — this
-repo's default branch hosts an unrelated project, so the workflow deploys
-straight from this branch rather than waiting on a merge. It builds with
-`GH_PAGES_BASE=/coconut/` so asset URLs resolve correctly under GitHub
-Pages' project-site subpath (`vite.config.ts` falls back to `base: '/'`
-otherwise, so local dev, `vite preview`, and the self-contained artifact
-build in `scripts/pack-artifact.mjs` are unaffected). One-time setup: in the
-repo's Settings → Pages, set Source to "GitHub Actions" — after that the
-workflow runs automatically on every relevant push.
+`.github/workflows/deploy-pages.yml` builds and publishes this app to GitHub
+Pages on every push to `main`. It builds with `GH_PAGES_BASE=/KOH/` so asset
+URLs resolve correctly under GitHub Pages' project-site subpath
+(`vite.config.ts` falls back to `base: '/'` otherwise, so local dev, `vite
+preview`, and the self-contained artifact build in
+`scripts/pack-artifact.mjs` are unaffected). One-time setup: in the repo's
+Settings → Pages, set Source to "GitHub Actions" — after that the workflow
+runs automatically on every push to `main`, and the site is served at
+`https://liammccue24-max.github.io/KOH/`.
 
 ## What it models
 
