@@ -53,12 +53,21 @@ and `src/sim/corners.ts` detects convex mask corners on the raster grid.
    format directly in the browser — no server, no external CAD tool — and
    flattens `SREF`/`AREF` cell references (including arrays, rotation,
    mirroring, and magnification) into absolute polygons.
-3. Pick the mask layer/datatype from the dropdown.
-4. Set **Layer meaning**: whether the drawn shapes are the etch *openings*
+3. Pick the etch mask layer/datatype from the dropdown.
+4. If your file also has a wafer or die **outline** layer (a common
+   two-layer pattern: one layer is the full wafer/die shape, e.g. a 150mm
+   circle; the other is the etch-window pattern), set **Wafer/die outline**
+   to that layer. This sizes the simulation to the real wafer/die shape and
+   clips the render to it, instead of just a rectangle around the mask
+   geometry — so the etch windows show up in their true position on the
+   wafer. When a file has exactly two layers and one's geometry clearly
+   contains and dwarfs the other, this is guessed automatically; check the
+   dropdown if it guessed wrong (or if you have more than two layers).
+5. Set **Layer meaning**: whether the drawn shapes are the etch *openings*
    (most common — you drew the cavity/groove you want) or the *protective
    mask* (you drew the silicon you want to keep, e.g. an isolated island or
    a corner-compensation structure).
-5. Adjust the (100) etch rate, undercut rate, and etch time. Etch time and
+6. Adjust the (100) etch rate, undercut rate, and etch time. Etch time and
    rate are independent; only their product (max possible depth) matters
    for self-limiting geometry, but the undercut rate is set separately.
 

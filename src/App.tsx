@@ -10,7 +10,17 @@ import type { GdsLibrary } from './gds/types.ts'
 import { toMicrons } from './lib/units.ts'
 import { base64ToArrayBuffer } from './lib/base64.ts'
 import { simulateEtch } from './sim/etchSim.ts'
-import type { EtchParams } from './sim/types.ts'
+import { computeBoundingBox, type BoundingBox, type EtchParams } from './sim/types.ts'
+
+type LayerKey = { layer: number; datatype: number }
+
+function bboxArea(b: BoundingBox): number {
+  return Math.max(0, b.maxX - b.minX) * Math.max(0, b.maxY - b.minY)
+}
+
+function contains(outer: BoundingBox, inner: BoundingBox): boolean {
+  return outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY
+}
 
 declare global {
   interface Window {
@@ -36,12 +46,29 @@ function App() {
   const [library, setLibrary] = useState<GdsLibrary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [topName, setTopName] = useState<string | null>(null)
-  const [selectedLayer, setSelectedLayer] = useState<{ layer: number; datatype: number } | null>(null)
+  const [selectedLayer, setSelectedLayer] = useState<LayerKey | null>(null)
+  const [boundaryLayer, setBoundaryLayer] = useState<LayerKey | null>(null)
   const [params, setParams] = useState<EtchParams>(DEFAULT_PARAMS)
   const [verticalExaggeration, setVerticalExaggeration] = useState(1)
   const [crossAxis, setCrossAxis] = useState<'row' | 'col'>('row')
   const [crossFraction, setCrossFraction] = useState(0.5)
   const [trueAspect, setTrueAspect] = useState(true)
+
+  // When a file has exactly two layers and one's geometry fully contains
+  // and dwarfs the other's, guess it's a wafer/die outline plus a mask
+  // layer (a very common two-layer pattern) and preselect accordingly, so
+  // the boundary doesn't have to be found and set by hand.
+  const guessLayers = (lib: GdsLibrary, top: string, layers: LayerKey[]): { mask: LayerKey; boundary: LayerKey | null } => {
+    if (layers.length !== 2) return { mask: layers[0], boundary: null }
+    const bboxes = layers.map((l) => computeBoundingBox(flattenLayer(lib, top, l.layer, l.datatype).map((p) => toMicrons(p.points, lib.dbUnitInMeters))))
+    const [a, b] = layers
+    const [boxA, boxB] = bboxes
+    const areaA = bboxArea(boxA)
+    const areaB = bboxArea(boxB)
+    if (areaA > areaB * 3 && contains(boxA, boxB)) return { mask: b, boundary: a }
+    if (areaB > areaA * 3 && contains(boxB, boxA)) return { mask: a, boundary: b }
+    return { mask: layers[0], boundary: null }
+  }
 
   const handleFile = (buffer: ArrayBuffer, name: string) => {
     try {
@@ -50,10 +77,12 @@ function App() {
       const top = lib.topLevelCandidates[0]
       const layers = collectLayers(lib, top)
       if (layers.length === 0) throw new Error(`Structure "${top}" has no drawn geometry (BOUNDARY/PATH/BOX) on any layer.`)
+      const guess = guessLayers(lib, top, layers)
       setLibrary(lib)
       setFileName(name)
       setTopName(top)
-      setSelectedLayer(layers[0])
+      setSelectedLayer(guess.mask)
+      setBoundaryLayer(guess.boundary)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to parse GDS file.')
@@ -82,15 +111,21 @@ function App() {
     return flat.map((p) => toMicrons(p.points, library.dbUnitInMeters))
   }, [library, topName, selectedLayer])
 
+  const boundaryPolygonsUm = useMemo(() => {
+    if (!library || !topName || !boundaryLayer) return null
+    const flat = flattenLayer(library, topName, boundaryLayer.layer, boundaryLayer.datatype)
+    return flat.map((p) => toMicrons(p.points, library.dbUnitInMeters))
+  }, [library, topName, boundaryLayer])
+
   const result = useMemo(() => {
     if (!polygonsUm || polygonsUm.length === 0) return null
     try {
-      return simulateEtch(polygonsUm, params)
+      return simulateEtch(polygonsUm, params, boundaryPolygonsUm)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Simulation failed.')
       return null
     }
-  }, [polygonsUm, params])
+  }, [polygonsUm, boundaryPolygonsUm, params])
 
   const crossIndex = result
     ? Math.min(
@@ -133,11 +168,15 @@ function App() {
                 onTopNameChange={(name) => {
                   setTopName(name)
                   const newLayers = collectLayers(library, name)
-                  setSelectedLayer(newLayers[0] ?? null)
+                  const guess = guessLayers(library, name, newLayers)
+                  setSelectedLayer(guess.mask)
+                  setBoundaryLayer(guess.boundary)
                 }}
                 layers={layers}
                 selectedLayer={selectedLayer}
                 onLayerChange={setSelectedLayer}
+                boundaryLayer={boundaryLayer}
+                onBoundaryLayerChange={setBoundaryLayer}
                 params={params}
                 onParamsChange={setParams}
                 maxTimeMin={240}

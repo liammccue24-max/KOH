@@ -27,9 +27,15 @@ const MAX_GRID_CELLS = 640
  *
  * This is a geometric approximation for visualization/design intuition, not
  * a crystallographically-exact process simulator.
+ *
+ * An optional `boundary` (e.g. a wafer or die outline layer) sizes the
+ * simulation domain and clips the result to that shape instead of a
+ * rectangle, so a mask drawn against a wafer-outline reference layer
+ * renders in its true position on the actual wafer/die.
  */
-export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): EtchResult {
-  const bbox = computeBoundingBox(polygons)
+export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, boundary?: readonly Polygon[] | null): EtchResult {
+  const hasBoundary = !!boundary && boundary.length > 0
+  const bbox = computeBoundingBox(hasBoundary ? boundary : polygons)
   const spanX = Math.max(bbox.maxX - bbox.minX, 1e-6)
   const spanY = Math.max(bbox.maxY - bbox.minY, 1e-6)
   const longerSpan = Math.max(spanX, spanY)
@@ -49,6 +55,8 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): 
   const grid: GridSpec = { width, height, cellSizeUm, originXUm: paddedMinX, originYUm: paddedMinY }
   const insideMask = rasterizePolygons(polygons, grid)
 
+  const insideWafer = hasBoundary ? rasterizePolygons(boundary, grid) : null
+
   // Undrawn area (including the padded margin ring) defaults to whichever
   // state "nothing drawn here" naturally means for the chosen polarity: when
   // the layer's shapes ARE the etch openings, undrawn silicon stays
@@ -60,6 +68,10 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): 
   // margin.
   const baseOpen = new Uint8Array(width * height)
   for (let i = 0; i < width * height; i++) {
+    if (insideWafer !== null && insideWafer[i] === 0) {
+      baseOpen[i] = 0 // outside the wafer/die outline: no silicon, nothing to etch
+      continue
+    }
     const drawn = insideMask[i] === 1
     baseOpen[i] = (params.polarity === 'layerIsOpening' ? drawn : !drawn) ? 1 : 0
   }
@@ -107,6 +119,12 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): 
     if (d > maxActualDepthUm) maxActualDepthUm = d
   }
 
+  let outsideWafer: Uint8Array | null = null
+  if (insideWafer !== null) {
+    outsideWafer = new Uint8Array(width * height)
+    for (let i = 0; i < width * height; i++) outsideWafer[i] = insideWafer[i] ? 0 : 1
+  }
+
   return {
     width,
     height,
@@ -115,6 +133,7 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): 
     originYUm: paddedMinY,
     depthUm,
     finalProtect,
+    outsideWafer,
     maxPossibleDepthUm,
     maxActualDepthUm,
   }

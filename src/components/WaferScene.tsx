@@ -11,7 +11,7 @@ interface Props {
 }
 
 function buildGeometry(result: EtchResult, verticalExaggeration: number): THREE.BufferGeometry {
-  const { width, height, cellSizeUm, depthUm, finalProtect, maxActualDepthUm } = result
+  const { width, height, cellSizeUm, depthUm, finalProtect, outsideWafer, maxActualDepthUm } = result
   const spanX = width * cellSizeUm
   const spanZ = height * cellSizeUm
   const centerX = spanX / 2
@@ -39,6 +39,9 @@ function buildGeometry(result: EtchResult, verticalExaggeration: number): THREE.
     }
   }
 
+  // Skip any quad touching a cell outside the wafer/die boundary layer (when
+  // one was given), so the mesh reads as the true wafer/die shape (e.g. a
+  // circular disc) instead of its rectangular bounding box.
   const indices: number[] = []
   for (let row = 0; row < height - 1; row++) {
     for (let col = 0; col < width - 1; col++) {
@@ -46,6 +49,7 @@ function buildGeometry(result: EtchResult, verticalExaggeration: number): THREE.
       const b = row * width + col + 1
       const c = (row + 1) * width + col
       const d = (row + 1) * width + col + 1
+      if (outsideWafer && (outsideWafer[a] || outsideWafer[b] || outsideWafer[c] || outsideWafer[d])) continue
       indices.push(a, c, b, b, c, d)
     }
   }

@@ -15,6 +15,9 @@ interface Props {
   selectedLayer: LayerOption | null
   onLayerChange: (l: LayerOption) => void
 
+  boundaryLayer: LayerOption | null
+  onBoundaryLayerChange: (l: LayerOption | null) => void
+
   params: EtchParams
   onParamsChange: (p: EtchParams) => void
 
@@ -40,6 +43,8 @@ export function ControlsPanel({
   layers,
   selectedLayer,
   onLayerChange,
+  boundaryLayer,
+  onBoundaryLayerChange,
   params,
   onParamsChange,
 }: Props) {
@@ -59,7 +64,7 @@ export function ControlsPanel({
         </Row>
       )}
 
-      <Row label="Mask layer">
+      <Row label="Etch mask layer">
         <select
           value={selectedLayer ? `${selectedLayer.layer}:${selectedLayer.datatype}` : ''}
           onChange={(e) => {
@@ -67,6 +72,27 @@ export function ControlsPanel({
             onLayerChange({ layer, datatype })
           }}
         >
+          {layers.map((l) => (
+            <option key={`${l.layer}:${l.datatype}`} value={`${l.layer}:${l.datatype}`}>
+              Layer {l.layer} / datatype {l.datatype}
+            </option>
+          ))}
+        </select>
+      </Row>
+
+      <Row label="Wafer/die outline" hint="Optional — draws the real wafer/die shape and clips etching to it">
+        <select
+          value={boundaryLayer ? `${boundaryLayer.layer}:${boundaryLayer.datatype}` : 'none'}
+          onChange={(e) => {
+            if (e.target.value === 'none') {
+              onBoundaryLayerChange(null)
+              return
+            }
+            const [layer, datatype] = e.target.value.split(':').map(Number)
+            onBoundaryLayerChange({ layer, datatype })
+          }}
+        >
+          <option value="none">None</option>
           {layers.map((l) => (
             <option key={`${l.layer}:${l.datatype}`} value={`${l.layer}:${l.datatype}`}>
               Layer {l.layer} / datatype {l.datatype}
@@ -132,7 +158,7 @@ export function ControlsPanel({
         />
       </Row>
 
-      <Row label={`Domain margin: ${(params.marginFraction * 100).toFixed(0)}%`} hint="Protected silicon padding around the drawn geometry">
+      <Row label={`Domain margin: ${(params.marginFraction * 100).toFixed(0)}%`} hint="Protected silicon padding around the wafer/die outline (or the mask geometry, if none is set)">
         <input
           type="range"
           min={0}

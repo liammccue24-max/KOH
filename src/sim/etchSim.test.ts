@@ -159,3 +159,67 @@ describe('simulateEtch: convex-corner undercut', () => {
     expect(later).toBeGreaterThan(early)
   })
 })
+
+function circlePolygon(cx: number, cy: number, r: number, n = 64): Polygon {
+  const pts: [number, number][] = []
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)])
+  }
+  return pts
+}
+
+describe('simulateEtch: optional wafer/die boundary layer', () => {
+  it('marks cells outside the boundary and leaves them unetched', () => {
+    // A round 150-unit-diameter wafer with one small etch window near the edge.
+    const wafer = [circlePolygon(0, 0, 75)]
+    const window: Polygon[] = [
+      [
+        [50, -5],
+        [60, -5],
+        [60, 5],
+        [50, 5],
+      ],
+    ]
+    const result = simulateEtch(window, baseParams, wafer)
+    expect(result.outsideWafer).not.toBeNull()
+
+    // Far outside the wafer circle (e.g. a corner of the padded rectangular grid).
+    const farCorner = sampleOutside(result, result.originXUm + 1, result.originYUm + 1)
+    expect(farCorner).toBe(1)
+
+    // The window itself, well inside the wafer, should be etched and marked inside.
+    const windowDepth = sampleDepth(result, 55, 0)
+    expect(windowDepth).toBeGreaterThan(0)
+  })
+
+  it('is fully backward compatible when no boundary is given', () => {
+    const result = simulateEtch(squareOpening(20), baseParams, null)
+    expect(result.outsideWafer).toBeNull()
+  })
+
+  it('sizes the domain from the boundary, not just the mask geometry', () => {
+    // A wafer much larger than the tiny mask window it contains.
+    const wafer = [circlePolygon(0, 0, 75)]
+    const window: Polygon[] = [
+      [
+        [-2, -2],
+        [2, -2],
+        [2, 2],
+        [-2, 2],
+      ],
+    ]
+    const result = simulateEtch(window, baseParams, wafer)
+    const spanX = result.width * result.cellSizeUm
+    // Domain should span roughly the wafer's 150-unit diameter (plus margin), not the ~4-unit window.
+    expect(spanX).toBeGreaterThan(140)
+  })
+})
+
+function sampleOutside(result: ReturnType<typeof simulateEtch>, xUm: number, yUm: number): number {
+  const col = Math.round((xUm - result.originXUm) / result.cellSizeUm - 0.5)
+  const row = Math.round((yUm - result.originYUm) / result.cellSizeUm - 0.5)
+  const c = Math.min(result.width - 1, Math.max(0, col))
+  const r = Math.min(result.height - 1, Math.max(0, row))
+  return result.outsideWafer ? result.outsideWafer[r * result.width + c] : 0
+}

@@ -29,6 +29,8 @@ export interface EtchResult {
   depthUm: Float32Array
   /** 1 = silicon still protected by mask at the end of the etch, 0 = exposed/etched region. */
   finalProtect: Uint8Array
+  /** 1 = outside the optional wafer/die boundary layer (no silicon here at all); null if no boundary was given. */
+  outsideWafer: Uint8Array | null
   maxPossibleDepthUm: number
   maxActualDepthUm: number
 }
