@@ -148,13 +148,13 @@ function App() {
     const out: EtchResult[] = []
     for (const cluster of maskClusters) {
       try {
-        out.push(simulateEtch(cluster, debouncedParams))
+        out.push(simulateEtch(cluster, debouncedParams, boundaryPolygonsUm ?? undefined))
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Simulation failed.')
       }
     }
     return out
-  }, [maskClusters, debouncedParams])
+  }, [maskClusters, debouncedParams, boundaryPolygonsUm])
 
   const primaryPatchIndex = useMemo(() => {
     if (patchResults.length <= 1) return 0

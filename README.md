@@ -59,7 +59,19 @@ grid stretched across the whole span. A wafer/die outline layer, if set, is
 rendered as a separate flat mesh built directly from its polygon (no etch
 physics, since it's context, not a feature to etch) -- with each patch's
 own bounding box cut out of it entirely (not just offset slightly below
-it) so the two meshes never overlap. An earlier version used a small
+it) so the two meshes never overlap.
+
+**With domain margin off, an outline layer's real geometry can also drive
+the simulation itself**, not just the flat context mesh. `computeDomainBox`
+in `etchSim.ts` looks for outline polygons that overlap a given mask
+cluster's bbox and, if found, uses their bounding box as the domain --
+letting a genuinely-designed die outline or compensation boundary define
+how far the simulated silicon extends, instead of a guessed percentage.
+This still respects the wafer-scale lesson above: the outline's
+contribution is clamped to `MAX_BOUNDARY_MARGIN_MULTIPLE` (4x) the mask
+cluster's own span on each side, so a single wafer-scale outline shared by
+several scattered windows still gives each one a small, locally-relevant
+domain rather than ballooning back out to wafer scale. An earlier version used a small
 constant Y offset instead; that only worked by coincidence at the scale it
 was tested at; z-buffer precision at a given camera distance doesn't scale
 down the same way a small design's overall span does, so the same offset
@@ -140,15 +152,16 @@ instead, so unrelated parameter changes skip the rebuild entirely. See
 6. Adjust the (100) etch rate, undercut rate, and etch time. Etch time and
    rate are independent; only their product (max possible depth) matters
    for self-limiting geometry, but the undercut rate is set separately.
-7. **Domain margin** is optional, via its checkbox. It pads extra protected
-   silicon around the mask geometry before simulating — useful if the file
-   you loaded draws only the etch opening itself, with no surrounding
-   context. If your mask was already designed with its own spacing (e.g.
-   corner-compensation tabs, or a protective layer whose edges are meant to
-   set where the self-limiting slope stops), leave it unchecked: the
-   padding would otherwise sit on top of what you drew, protecting silicon
-   the design never asked to protect. With it off, the simulation domain is
-   exactly the mask's own bounding box.
+7. **Domain margin** is optional, via its checkbox. Checked, it pads extra
+   protected silicon around the mask geometry before simulating, sized as a
+   percentage of the mask's own span — useful if the file you loaded draws
+   only the etch opening itself, with no surrounding context. Unchecked, no
+   synthetic percentage is applied; instead, if a **Wafer/die outline**
+   layer is set, *that* layer's own drawn geometry becomes the margin —
+   using the real designed boundary (e.g. a per-die outline, or corner-
+   compensation geometry) instead of a guessed percentage. With no outline
+   layer set, or none of it near this particular mask feature, the domain
+   falls back to exactly the mask's own bounding box.
 
 To regenerate the bundled sample file: `node scripts/generate-sample-gds.mjs`.
 It draws four layers: a square opening (pyramid), an elongated opening

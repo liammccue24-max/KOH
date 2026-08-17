@@ -90,6 +90,59 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     expect(result.width * result.cellSizeUm).toBeCloseTo(L, 6)
     expect(result.height * result.cellSizeUm).toBeCloseTo(L, 6)
   })
+
+  it('marginEnabled: false uses a local, overlapping boundary layer as the real margin', () => {
+    const L = 20
+    const boundary: Polygon[] = [
+      [
+        [-10, -10],
+        [30, -10],
+        [30, 30],
+        [-10, 30],
+      ],
+    ]
+    const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, boundary)
+    expect(result.originXUm).toBeCloseTo(-10, 6)
+    expect(result.originYUm).toBeCloseTo(-10, 6)
+    expect(result.width * result.cellSizeUm).toBeCloseTo(40, 6)
+    expect(result.height * result.cellSizeUm).toBeCloseTo(40, 6)
+  })
+
+  it('marginEnabled: false caps a wafer-scale boundary layer instead of adopting it wholesale', () => {
+    const L = 20
+    const hugeWafer: Polygon[] = [
+      [
+        [0, 0],
+        [100000, 0],
+        [100000, 100000],
+        [0, 100000],
+      ],
+    ]
+    const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, hugeWafer)
+    // Capped at MAX_BOUNDARY_MARGIN_MULTIPLE (4) times the mask's own span
+    // on each side -- far short of the wafer's real 100000um extent.
+    expect(result.width * result.cellSizeUm).toBeLessThan(200)
+    expect(result.height * result.cellSizeUm).toBeLessThan(200)
+    expect(result.originXUm).toBeCloseTo(0, 6)
+    expect(result.originYUm).toBeCloseTo(0, 6)
+  })
+
+  it('marginEnabled: false falls back to the tight mask bbox when no boundary polygon overlaps it', () => {
+    const L = 20
+    const disjointBoundary: Polygon[] = [
+      [
+        [1000, 1000],
+        [1100, 1000],
+        [1100, 1100],
+        [1000, 1100],
+      ],
+    ]
+    const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, disjointBoundary)
+    expect(result.originXUm).toBeCloseTo(0, 6)
+    expect(result.originYUm).toBeCloseTo(0, 6)
+    expect(result.width * result.cellSizeUm).toBeCloseTo(L, 6)
+    expect(result.height * result.cellSizeUm).toBeCloseTo(L, 6)
+  })
 })
 
 // A mesa polygon plus two tiny far-corner markers, so the mesa sits strictly

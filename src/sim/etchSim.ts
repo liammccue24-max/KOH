@@ -1,9 +1,78 @@
 import { findConvexProtectCorners } from './corners.ts'
 import { squaredDistanceTransform } from './edt.ts'
 import { rasterizePolygons, type GridSpec } from './raster.ts'
-import { computeBoundingBox, SQRT2, type EtchParams, type EtchResult, type Polygon } from './types.ts'
+import { computeBoundingBox, SQRT2, type BoundingBox, type EtchParams, type EtchResult, type Polygon } from './types.ts'
 
 const MAX_GRID_CELLS = 768
+
+// When marginEnabled is off and a boundary/outline layer is supplied, that
+// layer's own drawn geometry defines the margin instead of a percentage
+// guess. But a boundary layer can legitimately be wafer-scale (e.g. a
+// single 150mm outline shared by several scattered windows), and blindly
+// adopting its full bounding box would reintroduce the exact "domain sized
+// to the wafer" resolution bug this tool was already fixed to avoid. So
+// the boundary's contribution is capped at this multiple of the mask's own
+// span on each side -- generous enough for a realistic per-die outline
+// (typically a few times larger than its window), but bounded regardless
+// of how large the boundary shape actually is.
+const MAX_BOUNDARY_MARGIN_MULTIPLE = 4
+
+function boxesOverlap(a: BoundingBox, b: BoundingBox): boolean {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
+}
+
+function intersectBox(a: BoundingBox, b: BoundingBox): BoundingBox {
+  return { minX: Math.max(a.minX, b.minX), minY: Math.max(a.minY, b.minY), maxX: Math.min(a.maxX, b.maxX), maxY: Math.min(a.maxY, b.maxY) }
+}
+
+/**
+ * Domain box to simulate, in the same units as the mask polygons.
+ *
+ * - marginEnabled: pad the mask bbox by a fraction of its own longer span,
+ *   uniformly assumed protected (today's synthetic margin).
+ * - !marginEnabled, with a boundary layer whose geometry actually overlaps
+ *   this mask cluster: use that geometry's own bounding box as the margin
+ *   (clamped to MAX_BOUNDARY_MARGIN_MULTIPLE so a wafer-scale outline can't
+ *   blow up resolution), since a real drawn boundary is a more accurate
+ *   source of "how far does protected silicon extend here" than a guess.
+ * - !marginEnabled, no usable boundary geometry: no margin at all -- the
+ *   domain is exactly the mask's own bounding box, trusting that the mask
+ *   layer was already drawn with whatever spacing/compensation it needs.
+ */
+function computeDomainBox(maskBox: BoundingBox, params: EtchParams, boundaryPolygons: readonly Polygon[] | undefined): BoundingBox {
+  const spanX = Math.max(maskBox.maxX - maskBox.minX, 1e-6)
+  const spanY = Math.max(maskBox.maxY - maskBox.minY, 1e-6)
+  const longerSpan = Math.max(spanX, spanY)
+
+  if (params.marginEnabled) {
+    const margin = longerSpan * params.marginFraction
+    return { minX: maskBox.minX - margin, minY: maskBox.minY - margin, maxX: maskBox.maxX + margin, maxY: maskBox.maxY + margin }
+  }
+
+  if (boundaryPolygons && boundaryPolygons.length > 0) {
+    const overlapping = boundaryPolygons.filter((p) => boxesOverlap(computeBoundingBox([p]), maskBox))
+    if (overlapping.length > 0) {
+      const boundaryBox = computeBoundingBox(overlapping)
+      const cap = {
+        minX: maskBox.minX - longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        minY: maskBox.minY - longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        maxX: maskBox.maxX + longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        maxY: maskBox.maxY + longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
+      }
+      // The boundary must still fully contain the mask itself even after
+      // capping -- intersect only the *margin*, not the mask's own extent.
+      const clamped = intersectBox(boundaryBox, cap)
+      return {
+        minX: Math.min(clamped.minX, maskBox.minX),
+        minY: Math.min(clamped.minY, maskBox.minY),
+        maxX: Math.max(clamped.maxX, maskBox.maxX),
+        maxY: Math.max(clamped.maxY, maskBox.maxY),
+      }
+    }
+  }
+
+  return maskBox
+}
 
 /**
  * Simulates anisotropic KOH etching of a (100) silicon wafer under a
@@ -29,25 +98,26 @@ const MAX_GRID_CELLS = 768
  * a crystallographically-exact process simulator.
  *
  * The simulation domain is always sized tightly around the mask geometry
- * itself (its bounding box plus `marginFraction`), never around a larger
- * wafer/die outline: the {111} sidewall slope only spans a few tens of
- * microns even for a fairly deep etch, so sizing the grid to a wafer-scale
- * domain would spread that slope across a fraction of a single cell and
- * collapse it into an unresolved, wrongly-colored cliff. A wafer/die
- * outline layer is instead rendered separately, as flat context around
- * this tightly-resolved patch -- see WaferScene's buildContextGeometry.
+ * itself, never around a larger wafer/die outline: the {111} sidewall slope
+ * only spans a few tens of microns even for a fairly deep etch, so sizing
+ * the grid to a wafer-scale domain would spread that slope across a
+ * fraction of a single cell and collapse it into an unresolved, wrongly-
+ * colored cliff. The mask's own bbox is padded by `marginFraction` (when
+ * `marginEnabled`) or, if not, by the locally-overlapping portion of an
+ * optional boundary/outline layer's real geometry (see computeDomainBox) --
+ * either way the padding never exceeds a small multiple of the mask's own
+ * span. A wafer/die outline layer is separately rendered in full as flat
+ * context around this tightly-resolved patch -- see WaferScene's
+ * buildContextGeometry.
  */
-export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): EtchResult {
-  const bbox = computeBoundingBox(polygons)
-  const spanX = Math.max(bbox.maxX - bbox.minX, 1e-6)
-  const spanY = Math.max(bbox.maxY - bbox.minY, 1e-6)
-  const longerSpan = Math.max(spanX, spanY)
-  const margin = params.marginEnabled ? longerSpan * params.marginFraction : 0
+export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, boundaryPolygons?: readonly Polygon[]): EtchResult {
+  const maskBox = computeBoundingBox(polygons)
+  const domainBox = computeDomainBox(maskBox, params, boundaryPolygons)
 
-  const paddedMinX = bbox.minX - margin
-  const paddedMinY = bbox.minY - margin
-  const paddedSpanX = spanX + 2 * margin
-  const paddedSpanY = spanY + 2 * margin
+  const paddedMinX = domainBox.minX
+  const paddedMinY = domainBox.minY
+  const paddedSpanX = Math.max(domainBox.maxX - domainBox.minX, 1e-6)
+  const paddedSpanY = Math.max(domainBox.maxY - domainBox.minY, 1e-6)
   const paddedLongerSpan = Math.max(paddedSpanX, paddedSpanY)
 
   const resolution = Math.min(Math.max(params.resolution, 16), MAX_GRID_CELLS)

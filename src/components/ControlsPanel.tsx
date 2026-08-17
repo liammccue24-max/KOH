@@ -163,7 +163,13 @@ export function ControlsPanel({
 
       <Row
         label={`Domain margin: ${params.marginEnabled ? `${(params.marginFraction * 100).toFixed(0)}%` : 'off'}`}
-        hint="Extra protected silicon padding added around the mask. Only needed if the mask itself wasn't drawn with its own spacing/compensation — otherwise this pads on top of what you designed."
+        hint={
+          params.marginEnabled
+            ? "Extra protected silicon padding added around the mask. Only needed if the mask itself wasn't drawn with its own spacing/compensation — otherwise this pads on top of what you designed."
+            : boundaryLayer
+              ? 'Off: the Wafer/die outline layer’s own drawn geometry defines the margin instead, clipped to a sensible local area.'
+              : 'Off: the domain is exactly the mask’s own bounding box, with no padding. Set a Wafer/die outline layer above to use its real geometry as the margin instead.'
+        }
       >
         <div className="control-margin-row">
           <input
