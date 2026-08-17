@@ -9,8 +9,10 @@ import { collectLayers, flattenLayer } from './gds/flatten.ts'
 import type { GdsLibrary } from './gds/types.ts'
 import { toMicrons } from './lib/units.ts'
 import { base64ToArrayBuffer } from './lib/base64.ts'
+import { useDebouncedValue } from './lib/useDebouncedValue.ts'
+import { clusterPolygons } from './lib/clusterPolygons.ts'
 import { simulateEtch } from './sim/etchSim.ts'
-import { computeBoundingBox, type BoundingBox, type EtchParams } from './sim/types.ts'
+import { computeBoundingBox, type BoundingBox, type EtchParams, type EtchResult } from './sim/types.ts'
 
 type LayerKey = { layer: number; datatype: number }
 
@@ -53,6 +55,7 @@ function App() {
   const [crossAxis, setCrossAxis] = useState<'row' | 'col'>('row')
   const [crossFraction, setCrossFraction] = useState(0.5)
   const [trueAspect, setTrueAspect] = useState(true)
+  const [crossPatchIndex, setCrossPatchIndex] = useState<number | null>(null)
 
   // When a file has exactly two layers and one's geometry fully contains
   // and dwarfs the other's, guess it's a wafer/die outline plus a mask
@@ -117,20 +120,56 @@ function App() {
     return flat.map((p) => toMicrons(p.points, library.dbUnitInMeters))
   }, [library, topName, boundaryLayer])
 
-  const result = useMemo(() => {
-    if (!polygonsUm || polygonsUm.length === 0) return null
-    try {
-      return simulateEtch(polygonsUm, params, boundaryPolygonsUm)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Simulation failed.')
-      return null
-    }
-  }, [polygonsUm, boundaryPolygonsUm, params])
+  // Slider labels update instantly off `params`; the (potentially expensive
+  // at high resolution) simulation + 3D geometry rebuild lags a little
+  // behind via this debounced copy, so dragging stays smooth.
+  const debouncedParams = useDebouncedValue(params, 120)
 
-  const crossIndex = result
+  // Widely-separated mask features (e.g. several etch windows scattered
+  // across a large wafer) are split into independent clusters, each
+  // simulated on its own tightly-fit grid -- so every feature gets full
+  // resolution instead of sharing one grid spread across the whole span.
+  const maskClusters = useMemo(() => {
+    if (!polygonsUm || polygonsUm.length === 0) return []
+    const bbox = computeBoundingBox(polygonsUm)
+    const gapUm = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) * 0.08
+    return clusterPolygons(polygonsUm, gapUm)
+  }, [polygonsUm])
+
+  const patchResults = useMemo(() => {
+    const out: EtchResult[] = []
+    for (const cluster of maskClusters) {
+      try {
+        out.push(simulateEtch(cluster, debouncedParams))
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Simulation failed.')
+      }
+    }
+    return out
+  }, [maskClusters, debouncedParams])
+
+  const primaryPatchIndex = useMemo(() => {
+    if (patchResults.length <= 1) return 0
+    let best = 0
+    let bestArea = -1
+    patchResults.forEach((r, i) => {
+      const area = r.width * r.cellSizeUm * (r.height * r.cellSizeUm)
+      if (area > bestArea) {
+        bestArea = area
+        best = i
+      }
+    })
+    return best
+  }, [patchResults])
+
+  const effectiveCrossPatchIndex = crossPatchIndex !== null && crossPatchIndex < patchResults.length ? crossPatchIndex : primaryPatchIndex
+  const sliceResult = patchResults[effectiveCrossPatchIndex] ?? null
+  const maxActualDepthUm = patchResults.length > 0 ? Math.max(...patchResults.map((r) => r.maxActualDepthUm)) : 0
+
+  const crossIndex = sliceResult
     ? Math.min(
-        (crossAxis === 'row' ? result.height : result.width) - 1,
-        Math.round(crossFraction * ((crossAxis === 'row' ? result.height : result.width) - 1)),
+        (crossAxis === 'row' ? sliceResult.height : sliceResult.width) - 1,
+        Math.round(crossFraction * ((crossAxis === 'row' ? sliceResult.height : sliceResult.width) - 1)),
       )
     : 0
 
@@ -184,7 +223,7 @@ function App() {
             </div>
           )}
 
-          {result && (
+          {patchResults.length > 0 && (
             <div>
               <p className="section-label">Result</p>
               <div className="controls">
@@ -207,7 +246,12 @@ function App() {
                   <span className="legend-swatch" style={{ background: '#9ea8b3' }} /> original surface
                   <span className="legend-swatch" style={{ background: '#1a2431' }} /> etched (deep)
                 </div>
-                <div className="stat-line">Max etched depth: {result.maxActualDepthUm.toFixed(3)} µm</div>
+                <div className="stat-line">Max etched depth: {maxActualDepthUm.toFixed(3)} µm</div>
+                {patchResults.length > 1 && (
+                  <div className="stat-line">
+                    {patchResults.length} separate features detected, each simulated at full resolution.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -220,13 +264,34 @@ function App() {
             </div>
           )}
 
-          {result && (
+          {patchResults.length > 0 && (
             <>
               <div className="view-3d">
-                <WaferScene key={fileName} result={result} verticalExaggeration={verticalExaggeration} />
+                <WaferScene
+                  key={fileName}
+                  results={patchResults}
+                  boundaryPolygonsUm={boundaryPolygonsUm}
+                  verticalExaggeration={verticalExaggeration}
+                />
               </div>
               <div className="view-cross-section">
                 <div className="cross-section-controls">
+                  {patchResults.length > 1 && (
+                    <label>
+                      Feature
+                      <select
+                        value={effectiveCrossPatchIndex}
+                        onChange={(e) => setCrossPatchIndex(Number(e.target.value))}
+                      >
+                        {patchResults.map((_, i) => (
+                          <option key={i} value={i}>
+                            {i + 1}
+                            {i === primaryPatchIndex ? ' (largest)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label>
                     <input
                       type="radio"
@@ -258,7 +323,7 @@ function App() {
                     True aspect ratio
                   </label>
                 </div>
-                <CrossSectionView result={result} axis={crossAxis} index={crossIndex} trueAspect={trueAspect} />
+                {sliceResult && <CrossSectionView result={sliceResult} axis={crossAxis} index={crossIndex} trueAspect={trueAspect} />}
               </div>
             </>
           )}

@@ -80,7 +80,7 @@ export function ControlsPanel({
         </select>
       </Row>
 
-      <Row label="Wafer/die outline" hint="Optional — draws the real wafer/die shape and clips etching to it">
+      <Row label="Wafer/die outline" hint="Optional — shown as flat context around the etched patch, at full detail">
         <select
           value={boundaryLayer ? `${boundaryLayer.layer}:${boundaryLayer.datatype}` : 'none'}
           onChange={(e) => {
@@ -147,18 +147,21 @@ export function ControlsPanel({
         />
       </Row>
 
-      <Row label={`Grid resolution: ${params.resolution} cells`}>
+      <Row
+        label={`Grid resolution: ${params.resolution} cells`}
+        hint="Resolves just the mask geometry, so this stays sharp regardless of wafer size"
+      >
         <input
           type="range"
           min={64}
-          max={512}
+          max={768}
           step={32}
           value={params.resolution}
           onChange={(e) => set('resolution', Number(e.target.value))}
         />
       </Row>
 
-      <Row label={`Domain margin: ${(params.marginFraction * 100).toFixed(0)}%`} hint="Protected silicon padding around the wafer/die outline (or the mask geometry, if none is set)">
+      <Row label={`Domain margin: ${(params.marginFraction * 100).toFixed(0)}%`} hint="Protected silicon padding around the mask geometry">
         <input
           type="range"
           min={0}

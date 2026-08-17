@@ -1,7 +1,7 @@
 // Mirrors the --silicon / --accent(dark) / --etch-deep(dark) CSS tokens in
 // index.css, so the legend swatches match the rendered wafer exactly.
 const SILICON_TOP: [number, number, number] = [0.62, 0.659, 0.702] // #9ea8b3
-const MASK_COLOR: [number, number, number] = [0.851, 0.678, 0.251] // #d9ad40
+export const MASK_COLOR: [number, number, number] = [0.851, 0.678, 0.251] // #d9ad40
 const ETCH_SHALLOW: [number, number, number] = [0.75, 0.8, 0.85]
 const ETCH_DEEP: [number, number, number] = [0.102, 0.141, 0.192] // #1a2431
 

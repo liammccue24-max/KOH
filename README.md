@@ -46,6 +46,20 @@ The core algorithm lives in `src/sim/etchSim.ts`; `src/sim/edt.ts` is an
 exact O(n) squared Euclidean distance transform (Felzenszwalt & Huttenlocher),
 and `src/sim/corners.ts` detects convex mask corners on the raster grid.
 
+**Resolution is always local, never wafer-scale.** The {111} slope's lateral
+extent is only `depth/√2` — a few tens of microns even for a fairly deep
+etch — so sizing the simulation grid to a wafer/die outline would spread
+that slope across a fraction of a single cell. Instead, `simulateEtch` always
+sizes its grid tightly around just the mask geometry it's given, and
+`src/lib/clusterPolygons.ts` first splits the mask layer's polygons into
+spatially-separate groups (union-find over gap-expanded bounding boxes), so
+several widely-scattered features (e.g. four windows in the corners of a
+150mm wafer) each get their own full-resolution grid instead of sharing one
+grid stretched across the whole span. A wafer/die outline layer, if set, is
+rendered as a separate flat mesh built directly from its polygon (no etch
+physics, since it's context, not a feature to etch) and positioned under
+the fine patches — see `WaferScene.tsx`'s `buildContextGeometry`.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).
@@ -101,6 +115,15 @@ like ACES or full level-set simulators):
   detail near such features shouldn't be trusted.
 - A single mask layer and a single etch step. Multi-step/multi-mask KOH
   processes aren't composed automatically — simulate one layer at a time.
-- The raster grid resolution (adjustable, up to 512 cells along the longer
-  bounding-box axis) trades fidelity for speed; very fine features relative
-  to the overall design span will be under-resolved.
+- The raster grid resolution (adjustable, up to 768 cells along the longer
+  bounding-box axis of each spatially-separate feature) trades fidelity for
+  speed. Resolution tracks the mask geometry itself, not the overall wafer,
+  so this mainly matters for a single feature that's large in one direction
+  (e.g. a very long, thin V-groove).
+- The sidewall slope is only ever `depth/√2` wide, so it can still be
+  visually imperceptible at true scale when a shallow etch is shown against
+  a *large* window — e.g. a 30µm-deep etch (the default) into a 20mm window
+  has a slope only ~21µm wide, under 0.2% of the window's own size. That's
+  not under-resolution, just physically accurate: increase etch time (deeper
+  etch → proportionally wider slope) or uncheck "true aspect ratio" on the
+  cross-section to exaggerate the depth axis for inspection.

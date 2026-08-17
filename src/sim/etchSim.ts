@@ -3,7 +3,7 @@ import { squaredDistanceTransform } from './edt.ts'
 import { rasterizePolygons, type GridSpec } from './raster.ts'
 import { computeBoundingBox, SQRT2, type EtchParams, type EtchResult, type Polygon } from './types.ts'
 
-const MAX_GRID_CELLS = 640
+const MAX_GRID_CELLS = 768
 
 /**
  * Simulates anisotropic KOH etching of a (100) silicon wafer under a
@@ -28,14 +28,17 @@ const MAX_GRID_CELLS = 640
  * This is a geometric approximation for visualization/design intuition, not
  * a crystallographically-exact process simulator.
  *
- * An optional `boundary` (e.g. a wafer or die outline layer) sizes the
- * simulation domain and clips the result to that shape instead of a
- * rectangle, so a mask drawn against a wafer-outline reference layer
- * renders in its true position on the actual wafer/die.
+ * The simulation domain is always sized tightly around the mask geometry
+ * itself (its bounding box plus `marginFraction`), never around a larger
+ * wafer/die outline: the {111} sidewall slope only spans a few tens of
+ * microns even for a fairly deep etch, so sizing the grid to a wafer-scale
+ * domain would spread that slope across a fraction of a single cell and
+ * collapse it into an unresolved, wrongly-colored cliff. A wafer/die
+ * outline layer is instead rendered separately, as flat context around
+ * this tightly-resolved patch -- see WaferScene's buildContextGeometry.
  */
-export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, boundary?: readonly Polygon[] | null): EtchResult {
-  const hasBoundary = !!boundary && boundary.length > 0
-  const bbox = computeBoundingBox(hasBoundary ? boundary : polygons)
+export function simulateEtch(polygons: readonly Polygon[], params: EtchParams): EtchResult {
+  const bbox = computeBoundingBox(polygons)
   const spanX = Math.max(bbox.maxX - bbox.minX, 1e-6)
   const spanY = Math.max(bbox.maxY - bbox.minY, 1e-6)
   const longerSpan = Math.max(spanX, spanY)
@@ -55,8 +58,6 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   const grid: GridSpec = { width, height, cellSizeUm, originXUm: paddedMinX, originYUm: paddedMinY }
   const insideMask = rasterizePolygons(polygons, grid)
 
-  const insideWafer = hasBoundary ? rasterizePolygons(boundary, grid) : null
-
   // Undrawn area (including the padded margin ring) defaults to whichever
   // state "nothing drawn here" naturally means for the chosen polarity: when
   // the layer's shapes ARE the etch openings, undrawn silicon stays
@@ -68,10 +69,6 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   // margin.
   const baseOpen = new Uint8Array(width * height)
   for (let i = 0; i < width * height; i++) {
-    if (insideWafer !== null && insideWafer[i] === 0) {
-      baseOpen[i] = 0 // outside the wafer/die outline: no silicon, nothing to etch
-      continue
-    }
     const drawn = insideMask[i] === 1
     baseOpen[i] = (params.polarity === 'layerIsOpening' ? drawn : !drawn) ? 1 : 0
   }
@@ -119,12 +116,6 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
     if (d > maxActualDepthUm) maxActualDepthUm = d
   }
 
-  let outsideWafer: Uint8Array | null = null
-  if (insideWafer !== null) {
-    outsideWafer = new Uint8Array(width * height)
-    for (let i = 0; i < width * height; i++) outsideWafer[i] = insideWafer[i] ? 0 : 1
-  }
-
   return {
     width,
     height,
@@ -133,7 +124,6 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
     originYUm: paddedMinY,
     depthUm,
     finalProtect,
-    outsideWafer,
     maxPossibleDepthUm,
     maxActualDepthUm,
   }
