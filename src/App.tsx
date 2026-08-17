@@ -120,11 +120,6 @@ function App() {
     return flat.map((p) => toMicrons(p.points, library.dbUnitInMeters))
   }, [library, topName, boundaryLayer])
 
-  // Slider labels update instantly off `params`; the (potentially expensive
-  // at high resolution) simulation + 3D geometry rebuild lags a little
-  // behind via this debounced copy, so dragging stays smooth.
-  const debouncedParams = useDebouncedValue(params, 120)
-
   // Widely-separated mask features (e.g. several etch windows scattered
   // across a large wafer) are split into independent clusters, each
   // simulated on its own tightly-fit grid -- so every feature gets full
@@ -135,6 +130,18 @@ function App() {
     const gapUm = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) * 0.08
     return clusterPolygons(polygonsUm, gapUm)
   }, [polygonsUm])
+
+  // Slider labels always update instantly off `params`. Recomputing the
+  // simulation is normally cheap enough (each cluster gets its own small,
+  // tightly-fit grid) that it can just track `params` directly with no
+  // debounce -- debouncing every change added a flat, pointless ~100ms of
+  // input lag for the common case. Only fall back to a short debounce when
+  // the estimated total cell count across all clusters is large enough
+  // that recomputing on every slider tick could itself start dropping
+  // frames (many separate high-resolution features at once).
+  const estimatedTotalCells = maskClusters.length * params.resolution * params.resolution
+  const debounceMs = estimatedTotalCells > 400_000 ? 80 : 0
+  const debouncedParams = useDebouncedValue(params, debounceMs)
 
   const patchResults = useMemo(() => {
     const out: EtchResult[] = []

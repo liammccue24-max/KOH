@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -25,6 +25,52 @@ function patchBoundingBox(result: EtchResult): BoundingBox {
 
 function unionBox(a: BoundingBox, b: BoundingBox): BoundingBox {
   return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) }
+}
+
+/**
+ * Per-vertex normals for a regular height-field grid, via central
+ * differences against the neighboring grid positions (forward/backward
+ * difference at the edges). `BufferGeometry.computeVertexNormals()` is a
+ * generic implementation that walks every face and accumulates into
+ * temporary per-triangle vectors; measured against this on an identical
+ * mesh it was 3-10x slower and highly variable (GC pressure from all those
+ * temporaries), which was the actual cause of the interaction lag reported
+ * after the previous change -- rebuilding the whole geometry (necessary,
+ * since depth values change) was never the expensive part, recomputing
+ * normals generically was. This exploits the fixed grid topology to do it
+ * in a single allocation-free pass instead.
+ */
+function computeHeightFieldNormals(positions: Float32Array, width: number, height: number): Float32Array {
+  const normals = new Float32Array(width * height * 3)
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const i = row * width + col
+      const cl = col > 0 ? col - 1 : col
+      const cr = col < width - 1 ? col + 1 : col
+      const rt = row > 0 ? row - 1 : row
+      const rb = row < height - 1 ? row + 1 : row
+      const iL = (row * width + cl) * 3
+      const iR = (row * width + cr) * 3
+      const iT = (rt * width + col) * 3
+      const iB = (rb * width + col) * 3
+
+      const dx = positions[iR] - positions[iL]
+      const dyx = positions[iR + 1] - positions[iL + 1]
+      const dz = positions[iB + 2] - positions[iT + 2]
+      const dyz = positions[iB + 1] - positions[iT + 1]
+
+      // normal = normalize(cross(tangent_z, tangent_x))
+      const nx = -dz * dyx
+      const ny = dz * dx
+      const nz = -dyz * dx
+      const len = Math.hypot(nx, ny, nz) || 1
+
+      normals[i * 3] = nx / len
+      normals[i * 3 + 1] = ny / len
+      normals[i * 3 + 2] = nz / len
+    }
+  }
+  return normals
 }
 
 /**
@@ -73,8 +119,8 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('normal', new THREE.BufferAttribute(computeHeightFieldNormals(positions, width, height), 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   return geometry
 }
 
@@ -132,11 +178,15 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, 
     }
   }
 
+  // Flat mesh -- every normal is simply "up", no need to derive it.
+  const normals = new Float32Array(width * height * 3)
+  for (let i = 0; i < width * height; i++) normals[i * 3 + 1] = 1
+
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   return geometry
 }
 
@@ -168,6 +218,23 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
     () => (boundaryPolygonsUm ? buildContextGeometry(boundaryPolygonsUm, centerXUm, centerZUm, maxSpan) : null),
     [boundaryPolygonsUm, centerXUm, centerZUm, maxSpan],
   )
+
+  // These BufferGeometry objects are built by hand (not declared as JSX
+  // children), so react-three-fiber never takes ownership of disposing
+  // them -- passing a fresh one as `geometry={...}` just orphans the old
+  // one's GPU-side buffers. Without this, every parameter change leaked a
+  // full position/color/index buffer set, and interaction got visibly
+  // slower the longer a session ran.
+  useEffect(() => {
+    return () => {
+      for (const geometry of patchGeometries) geometry.dispose()
+    }
+  }, [patchGeometries])
+  useEffect(() => {
+    return () => {
+      contextGeometry?.dispose()
+    }
+  }, [contextGeometry])
 
   if (!didInitCamera.current) {
     camera.position.set(maxSpan * 0.6, maxSpan * 0.55, maxSpan * 0.75)

@@ -60,6 +60,20 @@ rendered as a separate flat mesh built directly from its polygon (no etch
 physics, since it's context, not a feature to etch) and positioned under
 the fine patches — see `WaferScene.tsx`'s `buildContextGeometry`.
 
+**Normals are computed analytically, not via `computeVertexNormals()`.**
+Each etch patch is a regular height-field grid, so its per-vertex normals
+are derived directly from finite differences against neighboring grid
+positions (`computeHeightFieldNormals` in `WaferScene.tsx`) rather than
+Three.js's generic per-face implementation. Profiled back to back on
+identical geometry, the generic version was 3-10x slower and highly
+variable — it accumulates through per-triangle temporary vectors, so it
+creates a lot of short-lived garbage that shows up as GC pauses on every
+parameter change. Geometries built by hand (rather than declared as JSX
+children) also aren't disposed automatically by react-three-fiber, so
+`WaferScene` explicitly disposes the previous patch/context geometries
+whenever a new one replaces them — otherwise every parameter change leaks
+their GPU-side buffers.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).
