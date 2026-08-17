@@ -57,8 +57,15 @@ several widely-scattered features (e.g. four windows in the corners of a
 150mm wafer) each get their own full-resolution grid instead of sharing one
 grid stretched across the whole span. A wafer/die outline layer, if set, is
 rendered as a separate flat mesh built directly from its polygon (no etch
-physics, since it's context, not a feature to etch) and positioned under
-the fine patches — see `WaferScene.tsx`'s `buildContextGeometry`.
+physics, since it's context, not a feature to etch) -- with each patch's
+own bounding box cut out of it entirely (not just offset slightly below
+it) so the two meshes never overlap. An earlier version used a small
+constant Y offset instead; that only worked by coincidence at the scale it
+was tested at; z-buffer precision at a given camera distance doesn't scale
+down the same way a small design's overall span does, so the same offset
+that was invisible on a large wafer was enough to z-fight and hide a small
+patch entirely on a design a few hundred microns across. See
+`WaferScene.tsx`'s `buildContextGeometry`.
 
 **Normals are computed analytically, not via `computeVertexNormals()`.**
 Each etch patch is a regular height-field grid, so its per-vertex normals

@@ -131,10 +131,17 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
  * wafer/die outline layer -- pure geometry, no etch physics -- giving
  * wafer-scale context around the fine patches without needing (or being
  * limited by) a single grid resolution shared across both vastly
- * different scales. Sits a hair below y=0 so each patch's own flat margin
- * renders seamlessly on top of it with no z-fighting.
+ * different scales. Each patch's own bounding box is cut out of this mesh
+ * entirely (not just offset slightly below it): a small constant Y offset
+ * to avoid z-fighting scales with the *overall* scene, but the actual
+ * z-buffer precision available at a given camera distance does not scale
+ * the same way, so a offset that was enough separation for one design
+ * silently stopped being enough for a much smaller one, and the patch
+ * flickered in and out under the context mesh instead of rendering on top
+ * of it. Removing the overlap entirely removes the possibility of
+ * z-fighting regardless of scale.
  */
-function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, centerZUm: number, maxSpanUm: number): THREE.BufferGeometry {
+function buildContextGeometry(boundaryPolygonsUm: Polygon[], holeBoxes: BoundingBox[], centerXUm: number, centerZUm: number): THREE.BufferGeometry {
   const bbox = computeBoundingBox(boundaryPolygonsUm)
   const spanX = Math.max(bbox.maxX - bbox.minX, 1e-6)
   const spanY = Math.max(bbox.maxY - bbox.minY, 1e-6)
@@ -148,14 +155,12 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, 
   const grid: GridSpec = { width, height, cellSizeUm, originXUm, originYUm }
   const inside = rasterizePolygons(boundaryPolygonsUm, grid)
 
-  const yUm = -maxSpanUm * 0.0005 // tiny, scale-relative drop to avoid z-fighting with a patch's flat margin
-
   const positions = new Float32Array(width * height * 3)
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       const i = row * width + col
       positions[i * 3] = originXUm + (col + 0.5) * cellSizeUm - centerXUm
-      positions[i * 3 + 1] = yUm
+      positions[i * 3 + 1] = 0
       positions[i * 3 + 2] = originYUm + (row + 0.5) * cellSizeUm - centerZUm
     }
   }
@@ -168,6 +173,15 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, 
     colors[i * 3 + 2] = b
   }
 
+  const inHole = (col: number, row: number): boolean => {
+    const x = originXUm + (col + 0.5) * cellSizeUm
+    const y = originYUm + (row + 0.5) * cellSizeUm
+    for (const box of holeBoxes) {
+      if (x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY) return true
+    }
+    return false
+  }
+
   const indices: number[] = []
   for (let row = 0; row < height - 1; row++) {
     for (let col = 0; col < width - 1; col++) {
@@ -176,6 +190,7 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], centerXUm: number, 
       const c = (row + 1) * width + col
       const d = (row + 1) * width + col + 1
       if (!inside[a] || !inside[b2] || !inside[c] || !inside[d]) continue
+      if (inHole(col, row) || inHole(col + 1, row) || inHole(col, row + 1) || inHole(col + 1, row + 1)) continue
       indices.push(a, c, b2, b2, c, d)
     }
   }
@@ -234,9 +249,10 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
     () => results.map((result) => buildPatchGeometry(result, verticalExaggeration, centerXUm, centerZUm)),
     [results, verticalExaggeration, centerXUm, centerZUm],
   )
+  const patchBoxes = useMemo(() => results.map(patchBoundingBox), [results])
   const contextGeometry = useMemo(
-    () => (boundaryPolygonsUm ? buildContextGeometry(boundaryPolygonsUm, centerXUm, centerZUm, maxSpan) : null),
-    [boundaryPolygonsUm, centerXUm, centerZUm, maxSpan],
+    () => (boundaryPolygonsUm ? buildContextGeometry(boundaryPolygonsUm, patchBoxes, centerXUm, centerZUm) : null),
+    [boundaryPolygonsUm, patchBoxes, centerXUm, centerZUm],
   )
 
   // These BufferGeometry objects are built by hand (not declared as JSX
