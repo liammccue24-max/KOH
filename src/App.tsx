@@ -100,7 +100,7 @@ function App() {
       handleFile(base64ToArrayBuffer(embedded), 'sample-koh-mask.gds')
       return
     }
-    fetch('/sample-koh-mask.gds')
+    fetch(`${import.meta.env.BASE_URL}sample-koh-mask.gds`)
       .then((r) => r.arrayBuffer())
       .then((buf) => handleFile(buf, 'sample-koh-mask.gds'))
       .catch(() => setError('Could not load the sample design.'))

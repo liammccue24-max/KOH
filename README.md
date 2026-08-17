@@ -19,6 +19,20 @@ npm run build    # production build to dist/
 npm test         # vitest unit tests
 ```
 
+## Deployment
+
+`.github/workflows/deploy-koh-etch-pages.yml` (at the repo root) builds and
+publishes this app to GitHub Pages on every push to
+`claude/gds-koh-etching-sim-n4d46d` that touches `koh-etch-simulator/` — this
+repo's default branch hosts an unrelated project, so the workflow deploys
+straight from this branch rather than waiting on a merge. It builds with
+`GH_PAGES_BASE=/coconut/` so asset URLs resolve correctly under GitHub
+Pages' project-site subpath (`vite.config.ts` falls back to `base: '/'`
+otherwise, so local dev, `vite preview`, and the self-contained artifact
+build in `scripts/pack-artifact.mjs` are unaffected). One-time setup: in the
+repo's Settings → Pages, set Source to "GitHub Actions" — after that the
+workflow runs automatically on every relevant push.
+
 ## What it models
 
 KOH etches single-crystal (100) silicon anisotropically: the {111}
