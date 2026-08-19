@@ -74,7 +74,7 @@ function App() {
     return { mask: layers[0], boundary: null }
   }
 
-  const handleFile = (buffer: ArrayBuffer, name: string) => {
+  const handleFile = (buffer: ArrayBuffer, name: string, isSample = false) => {
     try {
       const lib = parseGds(buffer)
       if (lib.structures.size === 0) throw new Error('No structures found — is this a valid GDSII stream file?')
@@ -88,6 +88,13 @@ function App() {
       setSelectedLayer(guess.mask)
       setBoundaryLayer(guess.boundary)
       setError(null)
+      // The bundled sample's shapes are deliberately drawn as bare mask
+      // openings/islands with no surrounding context, to keep it simple as a
+      // teaching example -- unlike a real design, they were never meant to
+      // supply their own spacing. Force the margin on so its self-limiting
+      // pyramids/V-grooves and undercut demo actually show up, regardless of
+      // the global default (which assumes real uploads already handle this).
+      if (isSample) setParams((p) => ({ ...p, marginEnabled: true }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to parse GDS file.')
       setLibrary(null)
@@ -97,12 +104,12 @@ function App() {
   const loadSampleDesign = () => {
     const embedded = window.__EMBEDDED_SAMPLE_GDS_BASE64__
     if (embedded) {
-      handleFile(base64ToArrayBuffer(embedded), 'sample-koh-mask.gds')
+      handleFile(base64ToArrayBuffer(embedded), 'sample-koh-mask.gds', true)
       return
     }
     fetch(`${import.meta.env.BASE_URL}sample-koh-mask.gds`)
       .then((r) => r.arrayBuffer())
-      .then((buf) => handleFile(buf, 'sample-koh-mask.gds'))
+      .then((buf) => handleFile(buf, 'sample-koh-mask.gds', true))
       .catch(() => setError('Could not load the sample design.'))
   }
 
