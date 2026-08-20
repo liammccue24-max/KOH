@@ -1,16 +1,20 @@
 import { useEffect, useRef } from 'react'
 import type { EtchResult } from '../sim/types.ts'
+import { maskAppearanceColorHex, type MaskAppearance } from './maskAppearance.ts'
+import type { Theme } from '../lib/theme.ts'
 
 interface Props {
   result: EtchResult
   axis: 'row' | 'col'
   index: number
   trueAspect: boolean
+  maskAppearance: MaskAppearance
+  theme: Theme
 }
 
 const PAD = 36
 
-export function CrossSectionView({ result, axis, index, trueAspect }: Props) {
+export function CrossSectionView({ result, axis, index, trueAspect, maskAppearance, theme }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -37,7 +41,8 @@ export function CrossSectionView({ result, axis, index, trueAspect }: Props) {
     const lateralScalePxPerUm = plotW / lateralSpanUm
     const depthPlotHeight = maxDepthUm * depthScalePxPerUm
 
-    ctx.fillStyle = '#0b0d12'
+    const isDark = theme === 'dark'
+    ctx.fillStyle = isDark ? '#0b0d12' : '#eef1f4'
     ctx.fillRect(0, 0, cssW, cssH)
 
     const surfaceY = PAD
@@ -59,17 +64,20 @@ export function CrossSectionView({ result, axis, index, trueAspect }: Props) {
     ctx.fillStyle = '#3a4a5c'
     ctx.fill()
 
-    // Mask indicator bar along the top.
+    // Mask indicator bar along the top. A real repeating pattern doesn't
+    // read at 5px tall, so the gnome option falls back to a flat stand-in
+    // color here rather than trying to show the pattern.
+    const maskHex = maskAppearanceColorHex(maskAppearance)
     for (let i = 0; i < n; i++) {
       const idx = axis === 'row' ? index * width + i : i * width + index
       if (finalProtect[idx]) {
-        ctx.fillStyle = '#d9ad40'
+        ctx.fillStyle = maskHex
         ctx.fillRect(toX(i), surfaceY - 6, toX(i + 1) - toX(i) + 1, 5)
       }
     }
 
     // Surface reference line.
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(PAD, surfaceY)
@@ -77,14 +85,14 @@ export function CrossSectionView({ result, axis, index, trueAspect }: Props) {
     ctx.stroke()
 
     // Axis labels.
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)'
     ctx.font = '11px monospace'
     ctx.fillText(`0`, PAD - 4, surfaceY - 10)
     ctx.fillText(`${maxDepthUm.toFixed(2)} µm`, PAD - 4, toY(maxDepthUm) + 4)
     ctx.fillText(`0 µm`, PAD, cssH - 8)
     ctx.fillText(`${lateralSpanUm.toFixed(1)} µm`, cssW - PAD - 50, cssH - 8)
     ctx.fillText(trueAspect ? 'true aspect (54.74° sidewalls read correctly)' : 'exaggerated depth axis', PAD, 14)
-  }, [result, axis, index, trueAspect])
+  }, [result, axis, index, trueAspect, maskAppearance, theme])
 
   return <canvas ref={canvasRef} className="cross-section-canvas" />
 }

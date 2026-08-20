@@ -6,15 +6,24 @@ import * as THREE from 'three'
 import { computeBoundingBox, type BoundingBox, type EtchResult, type Polygon } from '../sim/types.ts'
 import { rasterizePolygons, type GridSpec } from '../sim/raster.ts'
 import { depthToColor, MASK_COLOR } from './depthColor.ts'
+import type { MaskAppearance } from './maskAppearance.ts'
+import { getGnomeTexture } from '../lib/gnomeTexture.ts'
 
 interface Props {
   results: EtchResult[]
   boundaryPolygonsUm: Polygon[] | null
   verticalExaggeration: number
+  maskAppearance: MaskAppearance
 }
 
 const CONTEXT_RESOLUTION = 260
 const CAMERA_FOV_DEG = 40
+// How many times the mask's fill pattern (currently only the gnome
+// texture) repeats across the longer axis of a mesh. Tied to grid-index
+// fraction rather than physical microns, so it looks like the same size
+// pattern regardless of whether a patch is 50um or 5cm across.
+const PATCH_PATTERN_TILES = 5
+const CONTEXT_PATTERN_TILES = 20
 
 function patchBoundingBox(result: EtchResult): BoundingBox {
   return {
@@ -87,6 +96,9 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
 
   const positions = new Float32Array(width * height * 3)
   const colors = new Float32Array(width * height * 3)
+  const protect = new Float32Array(width * height)
+  const patternUv = new Float32Array(width * height * 2)
+  const longerAxis = Math.max(width, height)
 
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
@@ -104,6 +116,10 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
       colors[i * 3] = r
       colors[i * 3 + 1] = g
       colors[i * 3 + 2] = b
+
+      protect[i] = finalProtect[i]
+      patternUv[i * 2] = (col / longerAxis) * PATCH_PATTERN_TILES
+      patternUv[i * 2 + 1] = (row / longerAxis) * PATCH_PATTERN_TILES
     }
   }
 
@@ -119,6 +135,8 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
   }
 
   const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('protect', new THREE.BufferAttribute(protect, 1))
+  geometry.setAttribute('patternUv', new THREE.BufferAttribute(patternUv, 2))
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(computeHeightFieldNormals(positions, width, height), 3))
@@ -167,10 +185,19 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], holeBoxes: Bounding
 
   const [r, g, b] = MASK_COLOR
   const colors = new Float32Array(width * height * 3)
-  for (let i = 0; i < width * height; i++) {
-    colors[i * 3] = r
-    colors[i * 3 + 1] = g
-    colors[i * 3 + 2] = b
+  const protect = new Float32Array(width * height)
+  const patternUv = new Float32Array(width * height * 2)
+  const longerAxis = Math.max(width, height)
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const i = row * width + col
+      colors[i * 3] = r
+      colors[i * 3 + 1] = g
+      colors[i * 3 + 2] = b
+      protect[i] = 1
+      patternUv[i * 2] = (col / longerAxis) * CONTEXT_PATTERN_TILES
+      patternUv[i * 2 + 1] = (row / longerAxis) * CONTEXT_PATTERN_TILES
+    }
   }
 
   const inHole = (col: number, row: number): boolean => {
@@ -203,15 +230,102 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], holeBoxes: Bounding
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  geometry.setAttribute('protect', new THREE.BufferAttribute(protect, 1))
+  geometry.setAttribute('patternUv', new THREE.BufferAttribute(patternUv, 2))
   geometry.setIndex(indices)
   return geometry
 }
 
-function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Props) {
+/**
+ * Wraps a MeshStandardMaterial so the hard-mask color/pattern is a live
+ * uniform instead of baked vertex colors -- both so it can be changed
+ * without rebuilding geometry, and so the mask/silicon boundary renders as
+ * a crisp step instead of the GPU's default smooth interpolation across
+ * the shared boundary triangle (previously visible as the mask color
+ * visibly "bleeding" a fade into the cavity wall right at its edge). The
+ * `protect` attribute is 0/1 per vertex; `step(0.5, ...)` on its
+ * interpolated value snaps the transition to a sharp line through the
+ * boundary triangle instead of blending the two colors across its full
+ * width. `uniforms` is shared (and mutated in place, not replaced) across
+ * every material built this way so all of them update together and without
+ * needing a shader recompile when the mask color/pattern changes.
+ */
+function createMaskAwareMaterial(
+  params: THREE.MeshStandardMaterialParameters,
+  uniforms: { uMaskColor: { value: THREE.Color }; uUseMaskTexture: { value: number }; uMaskTexture: { value: THREE.Texture } },
+): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, ...params })
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms)
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float protect;\nattribute vec2 patternUv;\nvarying float vProtect;\nvarying vec2 vPatternUv;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvProtect = protect;\nvPatternUv = patternUv;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform vec3 uMaskColor;\nuniform sampler2D uMaskTexture;\nuniform float uUseMaskTexture;\nvarying float vProtect;\nvarying vec2 vPatternUv;',
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec3 maskColor = uUseMaskTexture > 0.5 ? texture2D(uMaskTexture, vPatternUv).rgb : uMaskColor;
+          diffuseColor.rgb = mix(diffuseColor.rgb, maskColor, step(0.5, vProtect));
+        }`,
+      )
+  }
+  return material
+}
+
+function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance }: Props) {
   const { camera } = useThree()
   // The maxSpan the camera was last positioned/aimed for (0 = never).
   const framedSpanRef = useRef(0)
   const controlsRef = useRef<OrbitControlsImpl>(null)
+
+  // Shared, mutated-in-place uniforms for both mask-colored materials
+  // (patch + context) -- see createMaskAwareMaterial. A ref rather than
+  // state because updating a Color/texture in place should not trigger a
+  // React re-render or geometry rebuild; only the uniform value itself
+  // needs to change for the next frame to pick it up.
+  const maskUniformsRef = useRef<{ uMaskColor: { value: THREE.Color }; uUseMaskTexture: { value: number }; uMaskTexture: { value: THREE.Texture } } | null>(null)
+  if (!maskUniformsRef.current) {
+    const placeholder = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
+    placeholder.needsUpdate = true
+    maskUniformsRef.current = {
+      uMaskColor: { value: new THREE.Color(maskAppearance.kind === 'color' ? maskAppearance.hex : '#ffffff') },
+      uUseMaskTexture: { value: maskAppearance.kind === 'gnomes' ? 1 : 0 },
+      uMaskTexture: { value: placeholder },
+    }
+  }
+  useEffect(() => {
+    const uniforms = maskUniformsRef.current
+    if (!uniforms) return
+    if (maskAppearance.kind === 'gnomes') {
+      uniforms.uMaskTexture.value = getGnomeTexture().texture
+      uniforms.uUseMaskTexture.value = 1
+    } else {
+      uniforms.uMaskColor.value.set(maskAppearance.hex)
+      uniforms.uUseMaskTexture.value = 0
+    }
+  }, [maskAppearance])
+
+  const patchMaterial = useMemo(
+    () => createMaskAwareMaterial({ side: THREE.DoubleSide, roughness: 0.85, metalness: 0.05 }, maskUniformsRef.current!),
+    [],
+  )
+  const contextMaterial = useMemo(
+    () => createMaskAwareMaterial({ side: THREE.DoubleSide, roughness: 0.9, metalness: 0.05 }, maskUniformsRef.current!),
+    [],
+  )
+  // Not JSX children, so (like the hand-built geometries below) r3f never
+  // takes ownership of disposing these.
+  useEffect(() => {
+    return () => {
+      patchMaterial.dispose()
+      contextMaterial.dispose()
+    }
+  }, [patchMaterial, contextMaterial])
 
   const combinedPatchBox = useMemo(() => results.map(patchBoundingBox).reduce((acc, b) => (acc ? unionBox(acc, b) : b), null as BoundingBox | null), [results])
   const boundaryBox = boundaryPolygonsUm ? computeBoundingBox(boundaryPolygonsUm) : null
@@ -346,25 +460,19 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration }: Pro
       <ambientLight intensity={0.55} />
       <directionalLight position={[maxSpan, maxSpan * 1.2, maxSpan * 0.5]} intensity={1.1} />
       <directionalLight position={[-maxSpan, maxSpan * 0.4, -maxSpan]} intensity={0.35} />
-      {contextGeometry && (
-        <mesh geometry={contextGeometry}>
-          <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.9} metalness={0.05} />
-        </mesh>
-      )}
+      {contextGeometry && <mesh geometry={contextGeometry} material={contextMaterial} />}
       {patchGeometries.map((geometry, i) => (
-        <mesh key={i} geometry={geometry}>
-          <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.85} metalness={0.05} />
-        </mesh>
+        <mesh key={i} geometry={geometry} material={patchMaterial} />
       ))}
       <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={minDistance} maxDistance={maxDistance} />
     </>
   )
 }
 
-export function WaferScene({ results, boundaryPolygonsUm, verticalExaggeration }: Props) {
+export function WaferScene({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance }: Props) {
   return (
     <Canvas className="wafer-canvas" camera={{ fov: CAMERA_FOV_DEG, near: 0.01, far: 1e6 }}>
-      <SceneContent results={results} boundaryPolygonsUm={boundaryPolygonsUm} verticalExaggeration={verticalExaggeration} />
+      <SceneContent results={results} boundaryPolygonsUm={boundaryPolygonsUm} verticalExaggeration={verticalExaggeration} maskAppearance={maskAppearance} />
     </Canvas>
   )
 }

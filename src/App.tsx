@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FileUpload } from './components/FileUpload.tsx'
 import { ControlsPanel } from './components/ControlsPanel.tsx'
 import { WaferScene } from './components/WaferScene.tsx'
 import { CrossSectionView } from './components/CrossSectionView.tsx'
 import { WaferMark } from './components/WaferMark.tsx'
+import { ThemeToggle } from './components/ThemeToggle.tsx'
+import { MaskAppearancePicker } from './components/MaskAppearancePicker.tsx'
 import { parseGds } from './gds/parser.ts'
 import { collectLayers, flattenLayer } from './gds/flatten.ts'
 import type { GdsLibrary } from './gds/types.ts'
@@ -13,6 +15,10 @@ import { useDebouncedValue } from './lib/useDebouncedValue.ts'
 import { clusterPolygons } from './lib/clusterPolygons.ts'
 import { simulateEtch } from './sim/etchSim.ts'
 import { computeBoundingBox, type BoundingBox, type EtchParams, type EtchResult } from './sim/types.ts'
+import { DEFAULT_MASK_APPEARANCE, type MaskAppearance } from './components/maskAppearance.ts'
+import { getGnomeTexture } from './lib/gnomeTexture.ts'
+import type { Theme } from './lib/theme.ts'
+import { applyTheme, getInitialTheme } from './lib/theme.ts'
 
 type LayerKey = { layer: number; datatype: number }
 
@@ -57,6 +63,12 @@ function App() {
   const [crossFraction, setCrossFraction] = useState(0.5)
   const [trueAspect, setTrueAspect] = useState(true)
   const [crossPatchIndex, setCrossPatchIndex] = useState<number | null>(null)
+  const [maskAppearance, setMaskAppearance] = useState<MaskAppearance>(DEFAULT_MASK_APPEARANCE)
+  const [theme, setTheme] = useState<Theme>(getInitialTheme)
+
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
 
   // When a file has exactly two layers and one's geometry fully contains
   // and dwarfs the other's, guess it's a wafer/die outline plus a mask
@@ -198,6 +210,7 @@ function App() {
           <h1>KOH Etch Simulator</h1>
           <p>GDSII mask &rarr; anisotropic KOH etch preview, (100) Si, edges on &lt;110&gt;</p>
         </div>
+        <ThemeToggle theme={theme} onChange={setTheme} />
       </header>
 
       <div className="app-body">
@@ -256,8 +269,19 @@ function App() {
                   />
                 </label>
 
+                <label className="control-row">
+                  <div className="control-label">
+                    <span>Hard mask</span>
+                  </div>
+                  <MaskAppearancePicker appearance={maskAppearance} onChange={setMaskAppearance} />
+                </label>
+
                 <div className="legend">
-                  <span className="legend-swatch" style={{ background: '#d9ad40' }} /> mask (protected)
+                  <span
+                    className="legend-swatch"
+                    style={maskAppearance.kind === 'gnomes' ? { backgroundImage: `url(${getGnomeTexture().dataUrl})` } : { background: maskAppearance.hex }}
+                  />{' '}
+                  mask (protected)
                   <span className="legend-swatch" style={{ background: '#9ea8b3' }} /> original surface
                   <span className="legend-swatch" style={{ background: '#1a2431' }} /> etched (deep)
                 </div>
@@ -287,6 +311,7 @@ function App() {
                   results={patchResults}
                   boundaryPolygonsUm={boundaryPolygonsUm}
                   verticalExaggeration={verticalExaggeration}
+                  maskAppearance={maskAppearance}
                 />
               </div>
               <div className="view-cross-section">
@@ -338,7 +363,9 @@ function App() {
                     True aspect ratio
                   </label>
                 </div>
-                {sliceResult && <CrossSectionView result={sliceResult} axis={crossAxis} index={crossIndex} trueAspect={trueAspect} />}
+                {sliceResult && (
+                  <CrossSectionView result={sliceResult} axis={crossAxis} index={crossIndex} trueAspect={trueAspect} maskAppearance={maskAppearance} theme={theme} />
+                )}
               </div>
             </>
           )}

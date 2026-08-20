@@ -140,6 +140,48 @@ actual numeric values into a string and uses that as the dependency
 instead, so unrelated parameter changes skip the rebuild entirely. See
 `patchBoxesKey` in `WaferScene.tsx`.
 
+**The mask/silicon boundary renders as a hard edge, not a smooth blend.**
+Each patch is one continuous height-field mesh, with the mask (protected)
+and etched (open) regions sharing vertices right at their boundary. Baking
+the mask color and the depth-ramp color directly into per-vertex `color`
+attributes, as an earlier version did, meant the GPU's default behavior --
+linearly interpolating vertex colors across the shared boundary triangle --
+smeared the mask color into the cavity wall over about one grid cell's
+width, visible as a soft fade right where the mask should end sharply.
+`createMaskAwareMaterial` in `WaferScene.tsx` fixes this with a small
+`onBeforeCompile` patch to `MeshStandardMaterial`: a `protect` attribute
+(0/1 per vertex) is interpolated as `vProtect` like any other varying, but
+the fragment shader applies `step(0.5, vProtect)` instead of using it
+directly -- collapsing the interpolated value to a hard binary choice
+before it picks between the mask color and the depth-ramp color, so the
+transition snaps to a crisp line through the boundary triangle instead of
+blending across its full width.
+
+**The hard mask's color and pattern are live GPU uniforms, not baked
+per-vertex data.** The same `onBeforeCompile` patch adds `uMaskColor`,
+`uMaskTexture`, and `uUseMaskTexture` uniforms, shared (and mutated in
+place, never replaced) between the patch and context materials via a ref
+so both stay in sync and neither needs a shader recompile or geometry
+rebuild when the mask's appearance changes -- picking a color or the
+"gnomes" pattern in the sidebar just updates the uniform values directly.
+One pattern option is included alongside plain colors: a small tiled
+illustration of cartoon gnomes, procedurally drawn onto a canvas once and
+cached (`src/lib/gnomeTexture.ts`) rather than shipped as an image asset.
+Tiling is based on each mesh's own grid-index fraction (not physical
+microns), so the pattern repeats a consistent number of times across a
+patch regardless of whether that patch is 50µm or 5cm across.
+
+**Light/dark theme is a user-facing toggle, not just automatic.** The CSS
+custom-property palette already supported both (`:root` for light,
+`[data-theme='dark']` to force dark, `@media (prefers-color-scheme: dark)`
+as the pre-choice default) -- see `src/lib/theme.ts` for the toggle that
+sets `data-theme` explicitly and persists the choice to `localStorage`, and
+the header's ☀️/🌙 button in `App.tsx`. The 3D viewport and the 2D
+cross-section canvas both read the current theme too (via `--canvas-bg-1`/
+`--canvas-bg-2` and an explicit `theme` prop, respectively) rather than
+staying a fixed dark instrument-panel color regardless of the rest of the
+UI, which was the previous, more limited behavior.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).

@@ -66,6 +66,9 @@
   --danger: #b3261e;
   --danger-wash: rgba(179, 38, 30, 0.08);
 
+  --canvas-bg-1: #eef3f7;
+  --canvas-bg-2: #ccd6e0;
+
   --font-display: 'Tektur', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Work Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
@@ -96,6 +99,9 @@
     --danger: #ff9d9d;
     --danger-wash: rgba(255, 100, 100, 0.1);
 
+    --canvas-bg-1: #161c26;
+    --canvas-bg-2: #05070a;
+
     color-scheme: dark;
   }
 }
@@ -121,6 +127,9 @@
   --focus-ring: #5fa8ff;
   --danger: #ff9d9d;
   --danger-wash: rgba(255, 100, 100, 0.1);
+
+  --canvas-bg-1: #161c26;
+  --canvas-bg-2: #05070a;
 
   color-scheme: dark;
 }
@@ -204,6 +213,29 @@ input[type='radio'] {
   font-size: 0.82rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+}
+
+.theme-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
 }
 
 /* ---------- Layout ---------- */
@@ -352,6 +384,45 @@ input[type='radio'] {
   opacity: 0.4;
 }
 
+.mask-swatches {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.mask-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid var(--border-strong);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mask-swatch.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+
+.mask-swatch-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mask-swatch-custom input[type='color'] {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
 .control-row select {
   background: var(--surface-2);
   color: var(--text-primary);
@@ -426,10 +497,7 @@ input[type='radio'] {
   width: 100%;
   height: 100%;
   display: block;
-  /* The 3D stage stays a fixed dark instrument bay regardless of UI theme,
-     the way a scope or CAD viewport does -- it's showing a physical wafer
-     under fixed lighting, not app chrome. */
-  background: radial-gradient(circle at 50% 30%, #161c26, #05070a);
+  background: radial-gradient(circle at 50% 30%, var(--canvas-bg-1), var(--canvas-bg-2));
 }
 
 .view-cross-section {
