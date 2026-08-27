@@ -2,13 +2,18 @@
   "name": "koh-etch-simulator",
   "private": true,
   "version": "0.0.0",
+  "description": "Loads a GDSII mask layout and previews how it etches into a (100)-oriented silicon wafer in KOH.",
+  "author": "KOH Etch Simulator",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "electron:dev": "cross-env ELECTRON_BUILD=1 vite build && node scripts/build-electron.mjs && electron .",
+    "electron:build:win": "tsc -b && cross-env ELECTRON_BUILD=1 vite build && node scripts/build-electron.mjs && electron-builder --win portable"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -24,10 +29,28 @@
     "@types/three": "^0.185.3",
     "@vitejs/plugin-react": "^6.0.4",
     "@vitest/ui": "^4.1.10",
+    "cross-env": "^10.1.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^30.0.1",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.kohetch.simulator",
+    "productName": "KOH Etch Simulator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "KOH-Etch-Simulator-${version}.${ext}"
+    }
   }
 }

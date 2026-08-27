@@ -31,6 +31,46 @@ Settings → Pages, set Source to "GitHub Actions" — after that the workflow
 runs automatically on every push to `main`, and the site is served at
 `https://liammccue24-max.github.io/KOH/`.
 
+## Windows executable
+
+```sh
+npm run electron:build:win   # builds release/KOH-Etch-Simulator-<version>.exe
+npm run electron:dev         # runs the Electron shell locally against a fresh build
+```
+
+`electron/main.cjs` is a minimal Electron main process: one `BrowserWindow`,
+no Node integration or IPC, since the app has no need for either. It's built
+from the same `dist/` as every other target, with two adjustments specific
+to loading from disk rather than a server:
+
+- **`vite.config.ts`'s `base` is `'./'`** (via `ELECTRON_BUILD=1`) instead of
+  `/` or `/KOH/`, so asset URLs are relative to `index.html` rather than
+  resolving against a server root that doesn't exist for a local file.
+- **The window loads a custom `app://` scheme, not `file://`.** Chromium
+  refuses to load `<script type="module">` from `file://` at all — this is
+  hardcoded per the HTML spec (module scripts always fetch in CORS mode,
+  and a `file://` page's origin is `null`, which can never satisfy that),
+  independent of the `crossorigin` attribute Vite also adds (also stripped
+  in `scripts/build-electron.mjs`, though that alone isn't sufficient).
+  `main.cjs` registers `app` as a privileged, standard, CORS-enabled scheme
+  and serves `dist/` through it via `protocol.handle`, giving the page a
+  real origin the same way an http(s) server would, without disabling
+  `webSecurity` (which would remove real cross-origin protections app-wide
+  to work around a problem that's specific to `file://`). Confirmed working
+  end-to-end (module script loads, WebGL scene renders, sample design
+  simulates) by actually running the packaged Electron app headlessly, not
+  just inspecting the built output.
+- The sample-file loader's `fetch()` fallback isn't reliable under a local
+  scheme either, so `scripts/build-electron.mjs` embeds the sample GDS as
+  base64 into `dist/index.html`, the same mechanism `scripts/pack-artifact.mjs`
+  already uses for the Claude Artifact build (`App.tsx`'s existing
+  `window.__EMBEDDED_SAMPLE_GDS_BASE64__` check).
+
+The build is unsigned (no code-signing certificate configured), so Windows
+SmartScreen will show an "Unknown publisher" warning on first run — click
+"More info" → "Run anyway". This is expected for any indie app distributed
+without a paid certificate, not a sign of a broken build.
+
 ## What it models
 
 KOH etches single-crystal (100) silicon anisotropically: the {111}
