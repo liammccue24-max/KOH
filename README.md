@@ -113,6 +113,33 @@ physics, since it's context, not a feature to etch) -- with each patch's
 own bounding box cut out of it entirely (not just offset slightly below
 it) so the two meshes never overlap.
 
+**The grid is anisotropic: each axis gets its own cell size.** A cluster's
+resolution used to be one shared cell size, sized off whichever axis was
+longer -- fine for roughly square features, but a real problem for a long,
+narrow shape with fine detail only at its ends (e.g. a solder-line trace,
+tens of times longer than it is wide, with small pads at each tip). A
+shared cell size means the short axis inherits whatever cell size the long
+axis dictates: a 25um-wide pad could end up under one grid cell wide even
+at the resolution cap, so its rasterization and EDT would see it as
+essentially a single ambiguous cell rather than real geometry -- not just
+blurry, but capable of reading as *wrong* (in one measured case, ~110um of
+etch depth where the pad's own width caps it at ~17.7um, because the
+under-resolved cell no longer reliably registered as protected mask).
+`simulateEtch` now sizes `cellSizeXUm` and `cellSizeYUm` independently
+(each axis's own span divided by `resolution`), so a narrow axis gets
+close to the requested resolution's worth of cells regardless of how much
+longer the other axis is. `squaredDistanceTransform` in `src/sim/edt.ts`
+supports this directly rather than through a separate algorithm: it
+already computes `min_p[(q-p)² + f(p)]` per axis by construction, so
+substituting `f' = f/h²` and multiplying the result by `h²` gives the
+physically-correct `h²(q-p)² + f(p)` term for that axis's real cell size --
+exact, not an approximation, and it now returns physical microns²
+directly rather than grid-cell-units needing a separate conversion
+afterward. The worst case this introduces is the same total cell count a
+plain square mask already reaches at max resolution (resolution², e.g.
+768×768) -- an elongated shape no longer gets a *smaller* budget than that
+for being elongated, not a new performance ceiling.
+
 **With domain margin off, an outline layer's real geometry can also drive
 the simulation itself**, not just the flat context mesh. `computeDomainBox`
 in `etchSim.ts` looks for outline polygons that overlap a given mask

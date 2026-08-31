@@ -180,7 +180,7 @@ function App() {
     let best = 0
     let bestArea = -1
     patchResults.forEach((r, i) => {
-      const area = r.width * r.cellSizeUm * (r.height * r.cellSizeUm)
+      const area = r.width * r.cellSizeXUm * (r.height * r.cellSizeYUm)
       if (area > bestArea) {
         bestArea = area
         best = i

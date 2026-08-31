@@ -35,8 +35,8 @@ function rectOpening(w: number, h: number): Polygon[] {
 }
 
 function sampleDepth(result: ReturnType<typeof simulateEtch>, xUm: number, yUm: number): number {
-  const col = Math.round((xUm - result.originXUm) / result.cellSizeUm - 0.5)
-  const row = Math.round((yUm - result.originYUm) / result.cellSizeUm - 0.5)
+  const col = Math.round((xUm - result.originXUm) / result.cellSizeXUm - 0.5)
+  const row = Math.round((yUm - result.originYUm) / result.cellSizeYUm - 0.5)
   const c = Math.min(result.width - 1, Math.max(0, col))
   const r = Math.min(result.height - 1, Math.max(0, row))
   return result.depthUm[r * result.width + c]
@@ -87,8 +87,8 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     const result = simulateEtch(squareOpening(L), { ...baseParams, marginFraction: 0.5, marginEnabled: false })
     expect(result.originXUm).toBeCloseTo(0, 6)
     expect(result.originYUm).toBeCloseTo(0, 6)
-    expect(result.width * result.cellSizeUm).toBeCloseTo(L, 6)
-    expect(result.height * result.cellSizeUm).toBeCloseTo(L, 6)
+    expect(result.width * result.cellSizeXUm).toBeCloseTo(L, 6)
+    expect(result.height * result.cellSizeYUm).toBeCloseTo(L, 6)
   })
 
   it('marginEnabled: false uses a local, overlapping boundary layer as the real margin', () => {
@@ -104,8 +104,8 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, boundary)
     expect(result.originXUm).toBeCloseTo(-10, 6)
     expect(result.originYUm).toBeCloseTo(-10, 6)
-    expect(result.width * result.cellSizeUm).toBeCloseTo(40, 6)
-    expect(result.height * result.cellSizeUm).toBeCloseTo(40, 6)
+    expect(result.width * result.cellSizeXUm).toBeCloseTo(40, 6)
+    expect(result.height * result.cellSizeYUm).toBeCloseTo(40, 6)
   })
 
   it('marginEnabled: false caps a wafer-scale boundary layer instead of adopting it wholesale', () => {
@@ -121,8 +121,8 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, hugeWafer)
     // Capped at MAX_BOUNDARY_MARGIN_MULTIPLE (4) times the mask's own span
     // on each side -- far short of the wafer's real 100000um extent.
-    expect(result.width * result.cellSizeUm).toBeLessThan(200)
-    expect(result.height * result.cellSizeUm).toBeLessThan(200)
+    expect(result.width * result.cellSizeXUm).toBeLessThan(200)
+    expect(result.height * result.cellSizeYUm).toBeLessThan(200)
     expect(result.originXUm).toBeCloseTo(0, 6)
     expect(result.originYUm).toBeCloseTo(0, 6)
   })
@@ -140,8 +140,8 @@ describe('simulateEtch: concave (self-limiting) geometry', () => {
     const result = simulateEtch(squareOpening(L), { ...baseParams, marginEnabled: false }, disjointBoundary)
     expect(result.originXUm).toBeCloseTo(0, 6)
     expect(result.originYUm).toBeCloseTo(0, 6)
-    expect(result.width * result.cellSizeUm).toBeCloseTo(L, 6)
-    expect(result.height * result.cellSizeUm).toBeCloseTo(L, 6)
+    expect(result.width * result.cellSizeXUm).toBeCloseTo(L, 6)
+    expect(result.height * result.cellSizeYUm).toBeCloseTo(L, 6)
   })
 })
 
@@ -237,9 +237,43 @@ describe('simulateEtch: domain is always sized to the mask geometry', () => {
       ],
     ]
     const result = simulateEtch(window, baseParams)
-    const spanX = result.width * result.cellSizeUm
+    const spanX = result.width * result.cellSizeXUm
     // Domain should track the ~4-unit window (plus marginFraction), not be
     // stretched out by anything else.
     expect(spanX).toBeLessThan(10)
+  })
+
+  it('resolves a narrow feature on an extremely elongated shape (anisotropic grid)', () => {
+    // Mirrors a real reported file: one connected mask shape -- a long,
+    // narrow column (500 x 16300um) with small 25x300um nubs at each end --
+    // about 34x longer than it is wide. A single isotropic cell size tied
+    // to the longer (Y) axis, as this tool used before, would size cells
+    // off a ~17000um span even at max resolution (768), putting the 25um
+    // nub at well under one grid cell wide -- reading as an unresolved
+    // solid block instead of a real self-limiting etch profile.
+    const body: Polygon = [
+      [-250, -8150],
+      [-250, 8150],
+      [250, 8150],
+      [250, -8150],
+    ]
+    const topNub: Polygon = [
+      [-12.5, 8150],
+      [-12.5, 8450],
+      [12.5, 8450],
+      [12.5, 8150],
+    ]
+    const result = simulateEtch([body, topNub], { ...baseParams, marginEnabled: true, marginFraction: 0.1, resolution: 256, undercutRateUmPerMin: 0 })
+
+    // The narrow (X) axis must get close to the requested resolution's
+    // worth of cells, not be starved by the ~34x-longer Y axis.
+    expect(result.width).toBeGreaterThan(200)
+
+    // The middle of the top nub should show real, non-trivial etch depth
+    // (a self-limiting slope reaching toward sqrt2 * halfWidth), not
+    // ~zero from an unresolved, effectively solid-blob mask.
+    const nubDepth = sampleDepth(result, 0, 8300)
+    const expectedNubDepth = Math.SQRT2 * 12.5
+    expect(nubDepth).toBeGreaterThan(expectedNubDepth * 0.5)
   })
 })

@@ -1,7 +1,9 @@
 export interface GridSpec {
   width: number
   height: number
-  cellSizeUm: number
+  /** Physical cell size, independent per axis -- see simulateEtch/squaredDistanceTransform for why these can differ. */
+  cellSizeXUm: number
+  cellSizeYUm: number
   /** Micron coordinates of grid cell (0,0)'s lower-left corner. */
   originXUm: number
   originYUm: number
@@ -9,13 +11,13 @@ export interface GridSpec {
 
 /** Rasterizes a set of polygons (microns) onto a boolean grid via even-odd scanline fill. Cells covered by any polygon are set to 1 (union across all polygons/rings). */
 export function rasterizePolygons(polygons: readonly (readonly (readonly [number, number])[])[], grid: GridSpec): Uint8Array {
-  const { width, height, cellSizeUm, originXUm, originYUm } = grid
+  const { width, height, cellSizeXUm, cellSizeYUm, originXUm, originYUm } = grid
   const out = new Uint8Array(width * height)
 
   for (const poly of polygons) {
     if (poly.length < 3) continue
     // Convert to grid space (cell-index units) once.
-    const pts = poly.map(([x, y]) => [(x - originXUm) / cellSizeUm, (y - originYUm) / cellSizeUm] as const)
+    const pts = poly.map(([x, y]) => [(x - originXUm) / cellSizeXUm, (y - originYUm) / cellSizeYUm] as const)
 
     let minY = Infinity
     let maxY = -Infinity

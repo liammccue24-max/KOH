@@ -29,8 +29,8 @@ function patchBoundingBox(result: EtchResult): BoundingBox {
   return {
     minX: result.originXUm,
     minY: result.originYUm,
-    maxX: result.originXUm + result.width * result.cellSizeUm,
-    maxY: result.originYUm + result.height * result.cellSizeUm,
+    maxX: result.originXUm + result.width * result.cellSizeXUm,
+    maxY: result.originYUm + result.height * result.cellSizeYUm,
   }
 }
 
@@ -92,7 +92,7 @@ function computeHeightFieldNormals(positions: Float32Array, width: number, heigh
  * in shared scene space.
  */
 function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, centerXUm: number, centerZUm: number): THREE.BufferGeometry {
-  const { width, height, cellSizeUm, originXUm, originYUm, depthUm, finalProtect, maxActualDepthUm } = result
+  const { width, height, cellSizeXUm, cellSizeYUm, originXUm, originYUm, depthUm, finalProtect, maxActualDepthUm } = result
 
   const positions = new Float32Array(width * height * 3)
   const colors = new Float32Array(width * height * 3)
@@ -103,8 +103,8 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       const i = row * width + col
-      const xUm = originXUm + (col + 0.5) * cellSizeUm - centerXUm
-      const zUm = originYUm + (row + 0.5) * cellSizeUm - centerZUm
+      const xUm = originXUm + (col + 0.5) * cellSizeXUm - centerXUm
+      const zUm = originYUm + (row + 0.5) * cellSizeYUm - centerZUm
       const depth = depthUm[i]
       const yUm = -depth * verticalExaggeration
 
@@ -170,7 +170,7 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], holeBoxes: Bounding
   const originXUm = bbox.minX
   const originYUm = bbox.minY
 
-  const grid: GridSpec = { width, height, cellSizeUm, originXUm, originYUm }
+  const grid: GridSpec = { width, height, cellSizeXUm: cellSizeUm, cellSizeYUm: cellSizeUm, originXUm, originYUm }
   const inside = rasterizePolygons(boundaryPolygonsUm, grid)
 
   const positions = new Float32Array(width * height * 3)
@@ -355,7 +355,7 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskA
 
   // How close the camera can zoom is bounded by the smallest patch (so any
   // feature, however fine, can be inspected closely), not the whole scene.
-  const smallestPatchSpan = results.reduce((min, r) => Math.min(min, Math.max(r.width * r.cellSizeUm, r.height * r.cellSizeUm)), Infinity)
+  const smallestPatchSpan = results.reduce((min, r) => Math.min(min, Math.max(r.width * r.cellSizeXUm, r.height * r.cellSizeYUm)), Infinity)
   const minDistance = Number.isFinite(smallestPatchSpan) ? smallestPatchSpan * 0.03 : maxSpan * 0.03
   const maxDistance = maxSpan * 3
 

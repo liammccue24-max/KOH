@@ -118,14 +118,26 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   const paddedMinY = domainBox.minY
   const paddedSpanX = Math.max(domainBox.maxX - domainBox.minX, 1e-6)
   const paddedSpanY = Math.max(domainBox.maxY - domainBox.minY, 1e-6)
-  const paddedLongerSpan = Math.max(paddedSpanX, paddedSpanY)
 
+  // Each axis gets its own cell size, sized independently off `resolution`
+  // -- not one shared cell size sized off whichever axis is longer. A
+  // single shared cell size means a highly elongated mask (e.g. a long
+  // solder-line trace with small pads at its ends, 30x+ longer than wide)
+  // gets its cell size dictated entirely by the long axis, starving the
+  // short axis of resolution: a 25um-wide feature could end up under one
+  // grid cell wide even at max resolution, reading as an unresolved solid
+  // block instead of a real etch profile. Sizing each axis to its own span
+  // means both the long and short axes get close to `resolution` cells
+  // regardless of aspect ratio -- the total cell count for a very elongated
+  // shape now matches what a plain square shape already uses at max
+  // resolution (resolution x resolution), not a new performance ceiling.
   const resolution = Math.min(Math.max(params.resolution, 16), MAX_GRID_CELLS)
-  const cellSizeUm = paddedLongerSpan / resolution
-  const width = Math.max(4, Math.round(paddedSpanX / cellSizeUm))
-  const height = Math.max(4, Math.round(paddedSpanY / cellSizeUm))
+  const cellSizeXUm = paddedSpanX / resolution
+  const cellSizeYUm = paddedSpanY / resolution
+  const width = Math.max(4, Math.round(paddedSpanX / cellSizeXUm))
+  const height = Math.max(4, Math.round(paddedSpanY / cellSizeYUm))
 
-  const grid: GridSpec = { width, height, cellSizeUm, originXUm: paddedMinX, originYUm: paddedMinY }
+  const grid: GridSpec = { width, height, cellSizeXUm, cellSizeYUm, originXUm: paddedMinX, originYUm: paddedMinY }
   const insideMask = rasterizePolygons(polygons, grid)
 
   // Undrawn area (including the padded margin ring) defaults to whichever
@@ -154,10 +166,14 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
     const row = Math.min(height - 1, Math.max(0, vy))
     cornerSeeds[row * width + col] = 1
   }
-  const distToCornerSq = corners.length > 0 ? squaredDistanceTransform(cornerSeeds, width, height) : null
+  // squaredDistanceTransform is given the real per-axis cell sizes, so
+  // both of these are already physical microns² -- no separate cell-to-um
+  // conversion needed afterward (see edt.ts for how the anisotropic case
+  // works, a straightforward rescaling of the same exact algorithm).
+  const distToCornerSq = corners.length > 0 ? squaredDistanceTransform(cornerSeeds, width, height, cellSizeXUm, cellSizeYUm) : null
 
   const undercutRadiusUm = Math.max(0, params.undercutRateUmPerMin) * params.timeMin
-  const undercutRadiusCellsSq = (undercutRadiusUm / cellSizeUm) ** 2
+  const undercutRadiusUmSq = undercutRadiusUm ** 2
 
   const finalOpen = new Uint8Array(width * height)
   for (let i = 0; i < width * height; i++) {
@@ -165,7 +181,7 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
       finalOpen[i] = 1
       continue
     }
-    const undercut = distToCornerSq !== null && distToCornerSq[i] <= undercutRadiusCellsSq
+    const undercut = distToCornerSq !== null && distToCornerSq[i] <= undercutRadiusUmSq
     finalOpen[i] = undercut ? 1 : 0
   }
 
@@ -173,14 +189,14 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   for (let i = 0; i < width * height; i++) finalProtect[i] = finalOpen[i] ? 0 : 1
 
   // --- Depth field: scaled Euclidean distance to nearest protected cell ---
-  const distToProtectSq = squaredDistanceTransform(finalProtect, width, height)
+  const distToProtectSq = squaredDistanceTransform(finalProtect, width, height, cellSizeXUm, cellSizeYUm)
   const maxPossibleDepthUm = Math.max(0, params.rate100UmPerMin) * params.timeMin
 
   const depthUm = new Float32Array(width * height)
   let maxActualDepthUm = 0
   for (let i = 0; i < width * height; i++) {
     if (!finalOpen[i]) continue
-    const distUm = Math.sqrt(distToProtectSq[i]) * cellSizeUm
+    const distUm = Math.sqrt(distToProtectSq[i])
     const d = Math.min(maxPossibleDepthUm, SQRT2 * distUm)
     depthUm[i] = d
     if (d > maxActualDepthUm) maxActualDepthUm = d
@@ -189,7 +205,8 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   return {
     width,
     height,
-    cellSizeUm,
+    cellSizeXUm,
+    cellSizeYUm,
     originXUm: paddedMinX,
     originYUm: paddedMinY,
     depthUm,

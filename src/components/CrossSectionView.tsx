@@ -30,9 +30,12 @@ export function CrossSectionView({ result, axis, index, trueAspect, maskAppearan
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, cssW, cssH)
 
-    const { width, height, cellSizeUm, depthUm, finalProtect } = result
+    const { width, height, cellSizeXUm, cellSizeYUm, depthUm, finalProtect } = result
     const n = axis === 'row' ? width : height
-    const lateralSpanUm = n * cellSizeUm
+    // Slicing along X (axis 'row') sweeps the width, so the lateral cell
+    // size is the X one; slicing along Y sweeps the height instead.
+    const lateralCellSizeUm = axis === 'row' ? cellSizeXUm : cellSizeYUm
+    const lateralSpanUm = n * lateralCellSizeUm
     const maxDepthUm = Math.max(1e-6, result.maxActualDepthUm)
 
     const plotW = cssW - PAD * 2
@@ -46,7 +49,7 @@ export function CrossSectionView({ result, axis, index, trueAspect, maskAppearan
     ctx.fillRect(0, 0, cssW, cssH)
 
     const surfaceY = PAD
-    const toX = (i: number) => PAD + i * cellSizeUm * lateralScalePxPerUm
+    const toX = (i: number) => PAD + i * lateralCellSizeUm * lateralScalePxPerUm
     const toY = (depth: number) => surfaceY + depth * depthScalePxPerUm
 
     // Silicon fill profile.

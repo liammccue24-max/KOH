@@ -11,7 +11,7 @@ export interface EtchParams {
   timeMin: number
   /** How the drawn GDS layer maps to the KOH mask. */
   polarity: MaskPolarity
-  /** Target number of grid cells along the longer bounding-box axis. */
+  /** Target number of grid cells along each axis, independently -- see simulateEtch's anisotropic domain sizing. */
   resolution: number
   /** Extra protected (unetched) margin around the drawn geometry, as a fraction of the bbox's longer side. */
   marginFraction: number
@@ -24,7 +24,9 @@ export const SQRT2 = Math.SQRT2
 export interface EtchResult {
   width: number
   height: number
-  cellSizeUm: number
+  /** Physical cell size, independent per axis -- see simulateEtch for why these can differ. */
+  cellSizeXUm: number
+  cellSizeYUm: number
   originXUm: number
   originYUm: number
   /** Etch depth in microns, one entry per cell (row-major, y increasing with row). Positive = etched down. */
