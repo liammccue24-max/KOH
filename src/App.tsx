@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FileUpload } from './components/FileUpload.tsx'
 import { ControlsPanel } from './components/ControlsPanel.tsx'
-import { WaferScene } from './components/WaferScene.tsx'
+import { WaferScene, type CameraViewPreset } from './components/WaferScene.tsx'
 import { CrossSectionView } from './components/CrossSectionView.tsx'
 import { WaferMark } from './components/WaferMark.tsx'
 import { ThemeToggle } from './components/ThemeToggle.tsx'
@@ -65,6 +65,7 @@ function App() {
   const [crossPatchIndex, setCrossPatchIndex] = useState<number | null>(null)
   const [maskAppearance, setMaskAppearance] = useState<MaskAppearance>(DEFAULT_MASK_APPEARANCE)
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
+  const [viewPreset, setViewPreset] = useState<CameraViewPreset>('iso')
 
   useEffect(() => {
     applyTheme(theme)
@@ -255,6 +256,21 @@ function App() {
             <div>
               <p className="section-label">Result</p>
               <div className="controls">
+                <div className="control-row">
+                  <div className="control-label">
+                    <span>3D camera view</span>
+                    <span className="control-hint">A thin feature can be just a few pixels wide at an angle -- top-down reads its true rectilinear shape</span>
+                  </div>
+                  <div className="view-toggle">
+                    <button type="button" className={viewPreset === 'iso' ? 'selected' : ''} onClick={() => setViewPreset('iso')}>
+                      Isometric
+                    </button>
+                    <button type="button" className={viewPreset === 'top' ? 'selected' : ''} onClick={() => setViewPreset('top')}>
+                      Top-down
+                    </button>
+                  </div>
+                </div>
+
                 <label className="control-row">
                   <div className="control-label">
                     <span>3D vertical exaggeration: {verticalExaggeration.toFixed(1)}x</span>
@@ -312,6 +328,7 @@ function App() {
                   boundaryPolygonsUm={boundaryPolygonsUm}
                   verticalExaggeration={verticalExaggeration}
                   maskAppearance={maskAppearance}
+                  viewPreset={viewPreset}
                 />
               </div>
               <div className="view-cross-section">

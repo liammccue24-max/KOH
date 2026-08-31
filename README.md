@@ -249,6 +249,23 @@ cross-section canvas both read the current theme too (via `--canvas-bg-1`/
 staying a fixed dark instrument-panel color regardless of the rest of the
 UI, which was the previous, more limited behavior.
 
+**A "top-down" camera view is available alongside the default isometric
+one.** A thin, elongated feature (e.g. a 25um-wide pad at the end of a
+500um-wide trace) is only a handful of screen pixels wide at a steep
+isometric angle — foreshortening a real, correctly-etched rectilinear shape
+into something that reads as a rendering glitch even though the underlying
+grid data is fine. Rather than tuning the default camera angle or the mask
+geometry to work around this for one aspect ratio at the cost of others, a
+`viewPreset` prop (`'iso' | 'top'`) on `WaferScene` picks between two fixed
+camera directions (`VIEW_DIRECTIONS` in `WaferScene.tsx`); the same
+re-framing effect that already handles scene-depth growth also re-triggers
+on a view-preset change, so switching views re-aims and repositions the
+camera the same way a growing etch does. The top-down direction isn't
+exactly straight down (`(0.0001, 1, 0)`, not `(0, 1, 0)`): a camera whose
+forward vector is exactly parallel to its up vector is a gimbal-lock
+singularity with an undefined roll, so a tiny lateral nudge keeps the
+orientation numerically stable while still reading as top-down.
+
 ## Loading your own design
 
 1. Export the layer(s) you want as a GDSII stream file (`.gds`).

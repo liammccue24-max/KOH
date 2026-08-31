@@ -9,11 +9,27 @@ import { depthToColor, MASK_COLOR } from './depthColor.ts'
 import type { MaskAppearance } from './maskAppearance.ts'
 import { getGnomeTexture } from '../lib/gnomeTexture.ts'
 
+export type CameraViewPreset = 'iso' | 'top'
+
 interface Props {
   results: EtchResult[]
   boundaryPolygonsUm: Polygon[] | null
   verticalExaggeration: number
   maskAppearance: MaskAppearance
+  viewPreset: CameraViewPreset
+}
+
+// A thin sliver-like feature (e.g. a 25um pad on a 500um-wide trace) can be
+// only a few screen pixels wide under the default isometric angle -- easy to
+// misread as a rendering glitch rather than the real, correctly-drawn shape
+// it is. 'top' looks straight down instead, where every edge reads as the
+// plain rectilinear shape it actually is. Not exactly (0,1,0): a camera
+// forward vector exactly parallel to the up vector is a gimbal-lock
+// singularity (roll becomes undefined), so a tiny lateral nudge keeps the
+// orientation numerically stable while still reading as top-down.
+const VIEW_DIRECTIONS: Record<CameraViewPreset, THREE.Vector3> = {
+  iso: new THREE.Vector3(0.6, 0.55, 0.75).normalize(),
+  top: new THREE.Vector3(0.0001, 1, 0).normalize(),
 }
 
 const CONTEXT_RESOLUTION = 260
@@ -277,10 +293,11 @@ function createMaskAwareMaterial(
   return material
 }
 
-function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance }: Props) {
+function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance, viewPreset }: Props) {
   const { camera } = useThree()
-  // The maxSpan the camera was last positioned/aimed for (0 = never).
+  // The maxSpan/preset the camera was last positioned/aimed for (0/null = never).
   const framedSpanRef = useRef(0)
+  const framedViewRef = useRef<CameraViewPreset | null>(null)
   const controlsRef = useRef<OrbitControlsImpl>(null)
 
   // Shared, mutated-in-place uniforms for both mask-colored materials
@@ -397,19 +414,22 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskA
   }, [contextGeometry])
 
   // Re-frame (reposition + re-aim) whenever the scene has grown well past
-  // what the camera was last set up for -- not on every render, so normal
-  // small parameter tweaks don't fight the user's manual orbit/zoom, but
-  // reliably enough that an interactively-deepening etch (see maxSpan
-  // above) can't grow the geometry out past a camera that's still framed
-  // for the shallow scene it started as. This runs in an effect (after
-  // commit), not inline during render: OrbitControls.update() clamps the
-  // new camera distance against its own minDistance/maxDistance, and those
-  // are only current on the underlying object once react-three-fiber has
-  // applied this render's (possibly just-grown) prop values to it -- doing
-  // this inline mid-render was clamping against the *previous* render's
-  // still-small maxDistance, silently undoing the reframe.
+  // what the camera was last set up for, or the user picked a different
+  // view preset -- not on every render, so normal small parameter tweaks
+  // don't fight the user's manual orbit/zoom, but reliably enough that an
+  // interactively-deepening etch (see maxSpan above) can't grow the
+  // geometry out past a camera that's still framed for the shallow scene
+  // it started as. This runs in an effect (after commit), not inline
+  // during render: OrbitControls.update() clamps the new camera distance
+  // against its own minDistance/maxDistance, and those are only current on
+  // the underlying object once react-three-fiber has applied this
+  // render's (possibly just-grown) prop values to it -- doing this inline
+  // mid-render was clamping against the *previous* render's still-small
+  // maxDistance, silently undoing the reframe.
   useEffect(() => {
-    if (maxSpan <= framedSpanRef.current * 1.2) return
+    const spanGrew = maxSpan > framedSpanRef.current * 1.2
+    const viewChanged = viewPreset !== framedViewRef.current
+    if (!spanGrew && !viewChanged) return
     // Distance derived from the actual vertical FOV (matching the Canvas's
     // camera={{ fov: 40 }}) rather than an arbitrary multiplier, so the
     // full maxSpan reliably fits in view regardless of scale -- an ad-hoc
@@ -421,7 +441,7 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskA
     // horizontal rather than vertical FOV.
     const halfFovRad = ((CAMERA_FOV_DEG / 2) * Math.PI) / 180
     const cameraDistance = (maxSpan / 2 / Math.tan(halfFovRad)) * 1.35
-    const dir = new THREE.Vector3(0.6, 0.55, 0.75).normalize()
+    const dir = VIEW_DIRECTIONS[viewPreset]
     camera.position.set(dir.x * cameraDistance, targetY + dir.y * cameraDistance, dir.z * cameraDistance)
     camera.lookAt(0, targetY, 0)
     // OrbitControls tracks its own target/spherical state independently of
@@ -434,7 +454,8 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskA
       controlsRef.current.update()
     }
     framedSpanRef.current = maxSpan
-  }, [camera, maxSpan, targetY])
+    framedViewRef.current = viewPreset
+  }, [camera, maxSpan, targetY, viewPreset])
 
   // Fixed near/far planes lose almost all depth-buffer precision once the
   // scene scale is very different from them (e.g. a 150mm wafer against a
@@ -469,10 +490,16 @@ function SceneContent({ results, boundaryPolygonsUm, verticalExaggeration, maskA
   )
 }
 
-export function WaferScene({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance }: Props) {
+export function WaferScene({ results, boundaryPolygonsUm, verticalExaggeration, maskAppearance, viewPreset }: Props) {
   return (
     <Canvas className="wafer-canvas" camera={{ fov: CAMERA_FOV_DEG, near: 0.01, far: 1e6 }}>
-      <SceneContent results={results} boundaryPolygonsUm={boundaryPolygonsUm} verticalExaggeration={verticalExaggeration} maskAppearance={maskAppearance} />
+      <SceneContent
+        results={results}
+        boundaryPolygonsUm={boundaryPolygonsUm}
+        verticalExaggeration={verticalExaggeration}
+        maskAppearance={maskAppearance}
+        viewPreset={viewPreset}
+      />
     </Canvas>
   )
 }

@@ -238,6 +238,38 @@ input[type='radio'] {
   background: var(--accent-wash);
 }
 
+.view-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.view-toggle button {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.view-toggle button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.view-toggle button.selected {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 /* ---------- Layout ---------- */
 
 .app-body {
