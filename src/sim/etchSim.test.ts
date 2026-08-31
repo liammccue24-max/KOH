@@ -276,4 +276,26 @@ describe('simulateEtch: domain is always sized to the mask geometry', () => {
     const expectedNubDepth = Math.SQRT2 * 12.5
     expect(nubDepth).toBeGreaterThan(expectedNubDepth * 0.5)
   })
+
+  it('pads each axis of the domain margin by its own span, not a single longer-axis fraction', () => {
+    // computeDomainBox used to pad both axes by marginFraction times
+    // whichever axis was longer -- fine for a roughly square mask, but for
+    // a highly elongated one (here 10x longer than wide) it inflates the
+    // short axis's padded span far past its own extent. Combined with each
+    // axis getting paddedSpan/resolution cells, that silently re-starves
+    // the short axis of resolution even after margin is meant to be a
+    // modest, proportionate pad -- the effect this test pins down directly
+    // by checking the padded span on each axis independently.
+    const w = 100
+    const h = 1000
+    const marginFraction = 0.2
+    const result = simulateEtch(rectOpening(w, h), { ...baseParams, marginFraction, undercutRateUmPerMin: 0 })
+
+    const expectedPaddedSpanX = w * (1 + 2 * marginFraction)
+    const expectedPaddedSpanY = h * (1 + 2 * marginFraction)
+    expect(result.width * result.cellSizeXUm).toBeCloseTo(expectedPaddedSpanX, 3)
+    expect(result.height * result.cellSizeYUm).toBeCloseTo(expectedPaddedSpanY, 3)
+    expect(result.originXUm).toBeCloseTo(-w * marginFraction, 3)
+    expect(result.originYUm).toBeCloseTo(-h * marginFraction, 3)
+  })
 })

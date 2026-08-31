@@ -140,6 +140,45 @@ plain square mask already reaches at max resolution (resolution², e.g.
 768×768) -- an elongated shape no longer gets a *smaller* budget than that
 for being elongated, not a new performance ceiling.
 
+**The domain margin is anisotropic too -- padding each axis by its own
+span, not a single fraction of whichever axis is longer.** The anisotropic
+grid fix above wasn't enough on its own for a real reported elongated
+design (a 500x16900um solder-line trace, ~34x longer than wide) with domain
+margin on: `computeDomainBox` still padded *both* axes by `marginFraction`
+times the mask's overall longer span, so the short (X) axis's padded span
+came out over 8x wider than its own extent, right back to under one grid
+cell across the 25um end pads -- undoing the anisotropic cell-size fix
+entirely, and visible as a jagged, blurry mess right at the wide-to-narrow
+transition. Padding each axis by a fraction of its *own* span (matching
+the already-anisotropic boundary-layer margin cap just below it) keeps the
+margin what a user would expect -- a modest, proportionate pad on each side
+-- instead of ballooning the short axis out to the long axis's scale. See
+the "pads each axis of the domain margin by its own span" test in
+`etchSim.test.ts`.
+
+**Convex-corner undercut is now seeded from the actual protected cell at
+each corner, not a vertex coordinate reinterpreted as a cell index.** A
+raster grid vertex sits exactly on the shared boundary between 4 cells --
+it has no cell of its own. `findConvexProtectCorners` in `src/sim/corners.ts`
+detects a convex mask corner as a grid vertex where exactly one of its 4
+surrounding cells is protected, but used to return that vertex's own
+(vx, vy) coordinate, which the caller then clamped directly into a
+(col, row) cell index. That silently assumed the protected neighbor was
+always the bottom-right one; for the other 3 possible corner orientations,
+it seeded the undercut distance field from whichever cell happened to sit
+there instead -- sometimes still mask, sometimes not (a corner can just as
+easily protect its top-left, top-right, or bottom-left neighbor). Verified
+directly on the real reported file: for one of its two junction corners
+this placed the seed on a cell that wasn't mask at all, and even where the
+old code got the right neighbor by coincidence, a vertex is unavoidably a
+half-cell removed from every neighboring cell's center on each axis -- at
+this file's actual resolution (grid rows tens of microns tall, forced
+coarse by the trace's own 34:1 aspect ratio) that alone was comparable to
+the entire undercut radius being modeled at typical etch times.
+`findConvexProtectCorners` now identifies which of the 4 neighbors is
+actually protected and returns that cell directly -- the real corner, not
+a rounding of it. See `corners.test.ts`.
+
 **With domain margin off, an outline layer's real geometry can also drive
 the simulation itself**, not just the flat context mesh. `computeDomainBox`
 in `etchSim.ts` looks for outline polygons that overlap a given mask

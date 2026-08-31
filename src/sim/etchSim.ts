@@ -42,11 +42,24 @@ function intersectBox(a: BoundingBox, b: BoundingBox): BoundingBox {
 function computeDomainBox(maskBox: BoundingBox, params: EtchParams, boundaryPolygons: readonly Polygon[] | undefined): BoundingBox {
   const spanX = Math.max(maskBox.maxX - maskBox.minX, 1e-6)
   const spanY = Math.max(maskBox.maxY - maskBox.minY, 1e-6)
-  const longerSpan = Math.max(spanX, spanY)
 
   if (params.marginEnabled) {
-    const margin = longerSpan * params.marginFraction
-    return { minX: maskBox.minX - margin, minY: maskBox.minY - margin, maxX: maskBox.maxX + margin, maxY: maskBox.maxY + margin }
+    // Each axis is padded by a fraction of its *own* span, not a single
+    // fraction of whichever axis is longer applied to both. For a roughly
+    // square mask these are the same thing, but for a highly elongated one
+    // (e.g. a solder-line trace tens of times longer than it is wide) an
+    // isotropic margin tied to the long axis inflates the short axis's
+    // padded span far beyond its own extent -- which, combined with each
+    // axis getting `paddedSpan / resolution` cells (see simulateEtch),
+    // silently re-starves the short axis of the very resolution that fix
+    // was meant to preserve. A 500um-wide, 16900um-tall real design's 25um
+    // end pads measured at ~1.15 grid cells wide with a longer-span-based
+    // margin (worse than useless -- the corner-undercut and depth fields
+    // both read as an ambiguous near-solid block), versus ~9.8 cells wide
+    // once each axis's margin is sized off its own span instead.
+    const marginX = spanX * params.marginFraction
+    const marginY = spanY * params.marginFraction
+    return { minX: maskBox.minX - marginX, minY: maskBox.minY - marginY, maxX: maskBox.maxX + marginX, maxY: maskBox.maxY + marginY }
   }
 
   if (boundaryPolygons && boundaryPolygons.length > 0) {
@@ -54,10 +67,10 @@ function computeDomainBox(maskBox: BoundingBox, params: EtchParams, boundaryPoly
     if (overlapping.length > 0) {
       const boundaryBox = computeBoundingBox(overlapping)
       const cap = {
-        minX: maskBox.minX - longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
-        minY: maskBox.minY - longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
-        maxX: maskBox.maxX + longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
-        maxY: maskBox.maxY + longerSpan * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        minX: maskBox.minX - spanX * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        minY: maskBox.minY - spanY * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        maxX: maskBox.maxX + spanX * MAX_BOUNDARY_MARGIN_MULTIPLE,
+        maxY: maskBox.maxY + spanY * MAX_BOUNDARY_MARGIN_MULTIPLE,
       }
       // The boundary must still fully contain the mask itself even after
       // capping -- intersect only the *margin*, not the mask's own extent.
@@ -161,11 +174,7 @@ export function simulateEtch(polygons: readonly Polygon[], params: EtchParams, b
   // --- Convex-corner undercut ---
   const corners = findConvexProtectCorners(baseProtect, width, height)
   const cornerSeeds = new Uint8Array(width * height)
-  for (const { vx, vy } of corners) {
-    const col = Math.min(width - 1, Math.max(0, vx))
-    const row = Math.min(height - 1, Math.max(0, vy))
-    cornerSeeds[row * width + col] = 1
-  }
+  for (const { col, row } of corners) cornerSeeds[row * width + col] = 1
   // squaredDistanceTransform is given the real per-axis cell sizes, so
   // both of these are already physical microns² -- no separate cell-to-um
   // conversion needed afterward (see edt.ts for how the anisotropic case
