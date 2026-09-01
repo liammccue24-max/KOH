@@ -13,9 +13,20 @@ function mix(a: [number, number, number], b: [number, number, number], t: number
   return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
 }
 
-/** Maps an etch depth to an RGB color: mask color at the original surface, a light-to-dark ramp with depth. */
-export function depthToColor(depthUm: number, maxDepthUm: number, isProtected: boolean): [number, number, number] {
-  if (isProtected) return MASK_COLOR
+/**
+ * Maps an etch depth to an RGB color: bare silicon at the (undisplaced,
+ * zero-depth) surface, a light-to-dark ramp with depth. Deliberately has no
+ * "is this masked?" branch: a protected cell always has depth exactly 0 by
+ * construction (see simulateEtch), so it already lands on this same ramp's
+ * zero-depth end -- there is no separate baked "mask gold" per-vertex color
+ * to bleed onto the sloped sidewall it shares a triangle with. The actual
+ * mask color is drawn on top of this per-vertex ramp entirely in the
+ * fragment shader (see createMaskAwareMaterial in WaferScene.tsx), gated on
+ * the fragment's own interpolated height so it can never cover any part of
+ * a triangle that has already dropped below the original surface -- not
+ * even the sliver nearest a mask edge.
+ */
+export function depthToColor(depthUm: number, maxDepthUm: number): [number, number, number] {
   if (depthUm <= 1e-6) return SILICON_TOP
   const t = maxDepthUm > 0 ? Math.min(1, depthUm / maxDepthUm) : 0
   return mix(ETCH_SHALLOW, ETCH_DEEP, t)

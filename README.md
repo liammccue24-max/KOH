@@ -263,6 +263,29 @@ before it picks between the mask color and the depth-ramp color, so the
 transition snaps to a crisp line through the boundary triangle instead of
 blending across its full width.
 
+**That hard step alone wasn't quite the right rule -- mask color could
+still land on a sliver of already-etched, sloped geometry.** A vertex
+right at a mask edge shares a triangle with its first open neighbor, whose
+height has *already* dropped to that neighbor's own etch depth (not zero).
+`step(0.5, vProtect)` splits that triangle's color down the middle by
+barycentric weight, not by height -- so the half of the triangle nearer
+the protected vertex was drawn in mask color even though, geometrically,
+that same half had already started sloping downward. Physically backwards:
+the flat mask sits at the original surface and stops there; the slope
+belongs entirely to open silicon, which only loses its protection to begin
+with via convex-corner undercut (`corners.ts`), never by the mask itself
+extending onto ground that's already been etched away. The fix adds a
+second gate on the fragment's own interpolated local height (the raw
+`position.y`, already `-depth * verticalExaggeration` and therefore exactly
+0 only where nothing has been etched yet): mask color can now only appear
+where a fragment is *both* protected *and* still sitting at that
+undisplaced height. `depthToColor` in `depthColor.ts` was simplified to
+match -- a protected vertex already bakes to the same zero-depth color the
+open ramp would give it (it has depth exactly 0 by construction), so there
+is no longer a separately-baked mask gold to blend toward in the first
+place; the fragment shader is now the only place mask color is drawn at
+all.
+
 **The hard mask's color and pattern are live GPU uniforms, not baked
 per-vertex data.** The same `onBeforeCompile` patch adds `uMaskColor`,
 `uMaskTexture`, and `uUseMaskTexture` uniforms, shared (and mutated in

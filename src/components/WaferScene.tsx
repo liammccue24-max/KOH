@@ -128,7 +128,7 @@ function buildPatchGeometry(result: EtchResult, verticalExaggeration: number, ce
       positions[i * 3 + 1] = yUm
       positions[i * 3 + 2] = zUm
 
-      const [r, g, b] = depthToColor(depth, maxActualDepthUm, finalProtect[i] === 1)
+      const [r, g, b] = depthToColor(depth, maxActualDepthUm)
       colors[i * 3] = r
       colors[i * 3 + 1] = g
       colors[i * 3 + 2] = b
@@ -255,16 +255,36 @@ function buildContextGeometry(boundaryPolygonsUm: Polygon[], holeBoxes: Bounding
 /**
  * Wraps a MeshStandardMaterial so the hard-mask color/pattern is a live
  * uniform instead of baked vertex colors -- both so it can be changed
- * without rebuilding geometry, and so the mask/silicon boundary renders as
- * a crisp step instead of the GPU's default smooth interpolation across
- * the shared boundary triangle (previously visible as the mask color
- * visibly "bleeding" a fade into the cavity wall right at its edge). The
- * `protect` attribute is 0/1 per vertex; `step(0.5, ...)` on its
- * interpolated value snaps the transition to a sharp line through the
- * boundary triangle instead of blending the two colors across its full
- * width. `uniforms` is shared (and mutated in place, not replaced) across
- * every material built this way so all of them update together and without
- * needing a shader recompile when the mask color/pattern changes.
+ * without rebuilding geometry, and so the mask never paints any part of a
+ * sloped sidewall triangle, only the still-undisplaced flat surface.
+ *
+ * A cell right at a mask edge shares a triangle with its first open
+ * neighbor, whose vertex has already dropped to that neighbor's own etch
+ * depth (not zero -- see buildPatchGeometry). Gating purely on the
+ * `protect` attribute (as an earlier version did, via `step(0.5, vProtect)`
+ * on its interpolated value) draws mask color across whatever half of that
+ * triangle is barycentrically closer to the protected vertex -- but since
+ * height is interpolated the same linear way across that same triangle,
+ * that half has *already* started dropping below the original surface.
+ * The result was mask color visibly painted onto part of the downward
+ * slope, when physically the mask sits perfectly flat right up to its edge
+ * and stops -- the slope belongs entirely to open silicon, which only
+ * loses its "protected" status to begin with via convex-corner undercut
+ * (see corners.ts), never by the mask itself extending onto a surface
+ * that's already been etched away.
+ *
+ * The fix adds a second gate on the fragment's own interpolated local
+ * height (`vLocalHeightUm`, the raw pre-transform `position.y` -- already
+ * `-depth * verticalExaggeration`, so exactly 0 only where nothing has
+ * been etched yet): mask color can only appear where the surface is *both*
+ * protected *and* still sitting at that undisplaced height. The instant a
+ * fragment's interpolated height drops at all, it falls back to the
+ * ordinary vertex-color interpolation between depth-ramp colors (see
+ * depthToColor -- a protected vertex already bakes to the same zero-depth
+ * color the ramp would give it, so that fallback is never mask-tinted
+ * either). `uniforms` is shared (and mutated in place, not replaced) across
+ * every material built this way so all of them update together and
+ * without needing a shader recompile when the mask color/pattern changes.
  */
 function createMaskAwareMaterial(
   params: THREE.MeshStandardMaterialParameters,
@@ -274,19 +294,24 @@ function createMaskAwareMaterial(
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float protect;\nattribute vec2 patternUv;\nvarying float vProtect;\nvarying vec2 vPatternUv;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvProtect = protect;\nvPatternUv = patternUv;')
+      .replace(
+        '#include <common>',
+        '#include <common>\nattribute float protect;\nattribute vec2 patternUv;\nvarying float vProtect;\nvarying vec2 vPatternUv;\nvarying float vLocalHeightUm;',
+      )
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvProtect = protect;\nvPatternUv = patternUv;\nvLocalHeightUm = position.y;')
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nuniform vec3 uMaskColor;\nuniform sampler2D uMaskTexture;\nuniform float uUseMaskTexture;\nvarying float vProtect;\nvarying vec2 vPatternUv;',
+        '#include <common>\nuniform vec3 uMaskColor;\nuniform sampler2D uMaskTexture;\nuniform float uUseMaskTexture;\nvarying float vProtect;\nvarying vec2 vPatternUv;\nvarying float vLocalHeightUm;',
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         {
           vec3 maskColor = uUseMaskTexture > 0.5 ? texture2D(uMaskTexture, vPatternUv).rgb : uMaskColor;
-          diffuseColor.rgb = mix(diffuseColor.rgb, maskColor, step(0.5, vProtect));
+          float stillUndisplaced = step(-0.0005, vLocalHeightUm);
+          float isMask = stillUndisplaced * step(0.5, vProtect);
+          diffuseColor.rgb = mix(diffuseColor.rgb, maskColor, isMask);
         }`,
       )
   }
